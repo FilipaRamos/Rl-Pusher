@@ -29,4 +29,7 @@
 # Executables
 *.exe
 *.out
+
+.vscode
+C
 *.app

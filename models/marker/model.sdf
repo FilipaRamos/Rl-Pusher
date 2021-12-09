@@ -1,0 +1,47 @@
+<?xml version="1.0"?>
+<sdf version="1.4">
+  <model name="marker">
+    <pose frame=''>0 0 0 0 -0 0</pose>
+    <static>1</static>
+    <gravity>1</gravity>
+    <self_collide>0</self_collide>
+    <kinematic>0</kinematic>
+
+    <link name="marker_link">
+      <collision name="body_collision">
+        <geometry>
+            <cylinder>
+                <radius>.1</radius>
+                <length>.0001</length>
+            </cylinder>
+        </geometry>
+        <pose frame=''>0 0 0 0 -0 0</pose>
+      </collision>
+
+      <visual name="body_visual">
+        <pose frame=''>0 0 0 0 -0 0</pose>
+        <geometry>
+            <cylinder>
+                <radius>.1</radius>
+                <length>.0001</length>
+            </cylinder>
+        </geometry>
+
+        <!--<material>
+          <ambient>0 0 0 1</ambient>
+          <diffuse>0 0 0 1</diffuse>
+          <specular>0 0 0 0</specular>
+          <emissive>0 1 0 1</emissive>
+        </material>-->
+        <material>
+          <script>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+            <name>Gazebo/Green</name>
+          </script>
+          <ambient>1 1 1 1</ambient>
+        </material>
+      </visual>
+
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<sdf version="1.4">
+  <model name="cylinder-3">
+    <pose frame=''>0 0 0 0 -0 0</pose>
+    <static>0</static>
+    <gravity>1</gravity>
+    <self_collide>0</self_collide>
+    <kinematic>0</kinematic>
+
+    <link name="cylinder_link">
+      <collision name="body_collision">
+        <geometry>
+            <cylinder>
+                <radius>.08</radius>
+                <length>.2</length>
+            </cylinder>
+        </geometry>
+        <pose frame=''>0 0 0 0 -0 0</pose>
+      </collision>
+
+      <visual name="body_visual">
+        <pose frame=''>0 0 0 0 -0 0</pose>
+        <geometry>
+            <cylinder>
+                <radius>.08</radius>
+                <length>.2</length>
+            </cylinder>
+        </geometry>
+        <material>
+          <ambient>1.0 0.8 0.8 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+          <specular>0 0 0 0</specular>
+          <emissive>0 0 0 1</emissive>
+        </material>
+      </visual>
+
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.000247</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.000247</iyy>
+          <iyz>0</iyz>
+          <izz>0.00016</izz>
+        </inertia>
+      </inertial>
+    </link>
+  </model>
+</sdf>
