@@ -8,10 +8,6 @@
 #include "sensor_msgs/LaserScan.h"
 #include "geometry_msgs/PoseStamped.h"
 
-class Object {
-    std::vector<int> 
-}
-
 class ObjectDetector {
     ros::NodeHandle n;
 
@@ -21,7 +17,6 @@ class ObjectDetector {
     ros::Publisher traj_pub;
 
     nav_msgs::Path traj_msg;
-    std::priority_queue<int, std::vector<int>, std::greater<int> > objects;
 public:
     ObjectDetector();
     int fillObjects();
