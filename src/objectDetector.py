@@ -21,11 +21,13 @@ class ObjectDetector:
         self.traj_pub = rospy.Publisher('trajectory', Path, queue_size=1000)
         self.traj_msg = Path()
 
+        self.precision = 0.01
+        self.places = 2
+
     def laser_callback(self, msg):
-        x, y = self.generate_pc(msg.ranges, msg.range_min, msg.range_max, msg.angle_increment)
-        clusters = self.segment_pc(x, y, msg.range_min)
-        classification = self.detect_objs(x, y, clusters)
-        self.plot_clusters(x, y, clusters, classification)
+        self.x, self.y = self.generate_pc(msg.ranges, msg.range_min, msg.range_max, msg.angle_increment)
+        self.clusters = self.segment_pc(self.x, self.y, msg.range_min)
+        self.plot_clusters(self.x, self.y, self.clusters)
 
     def odom_callback(self, msg):
         pose = PoseStamped()
@@ -49,70 +51,97 @@ class ObjectDetector:
 
         return x, y
 
+    def exclude_walls(self, x_, y_, clusters_):
+        x, y = [], []
+        tmp_x, tmp_y = [], []
+        clusters, tmp_clusters = [], []
+        cur_cluster = clusters_[0]
+        cur_cluster_size = 0
+        for x_coord, y_coord, elem in zip(x_, y_, clusters_):
+            if elem == cur_cluster:
+                cur_cluster_size += 1
+                tmp_x.append(x_coord)
+                tmp_y.append(y_coord)
+                tmp_clusters.append(elem)
+            else:
+                if cur_cluster_size < 15:
+                    x.extend(tmp_x)
+                    y.extend(tmp_y)
+                    clusters.extend(tmp_clusters)
+                tmp_x = []
+                tmp_y = []
+                tmp_clusters = []
+                cur_cluster_size = 1
+                cur_cluster = elem
+        if cur_cluster_size < 15:
+            x.extend(tmp_x)
+            y.extend(tmp_y)
+            clusters.extend(tmp_clusters)
+        return x, y, clusters
+
     def transform_to_img(self, x, y):
-        max_x = int(max(x))
-        min_x = int(min(x))
-        max_y = int(max(y))
-        min_y = int(min(y))
+        import math
 
-        length = max_x - min_x
-        height = max_y - min_y
+        min_x = round(min(x), self.places)
+        min_y = round(min(y), self.places)
 
-        image = np.zeros((length, height))
+        # Transform points to 0+ scale
+        x_, y_ = [], []
+        for x_coord, y_coord in zip(x, y):
+            x_coord = round(x_coord, self.places) + abs(min_x)
+            y_coord = round(y_coord, self.places) + abs(min_y)
+            x_.append(x_coord)
+            y_.append(y_coord)
 
-        for x_idx, y_idx in zip(x, y):
-            # Indexes must be integers
-            x_idx = int(x_idx)
-            y_idx = int(y_idx)
-            image[x_idx, y_idx] = 255
+        # Calculate length, height
+        max_x_ = max(x_)
+        max_y_ = max(y_)
 
-        return image
+        # Get up to desired precision
+        length = int(max_x_ / self.precision)
+        height = int(max_y_ / self.precision)
+        image = np.zeros((length + 1, height + 1), dtype=np.float16)
+
+        # Calculate buckets and image coords
+        bucket_cap_l = int(length / max_x_)
+        bucket_cap_h = int(height / max_y_)
+
+        # Create a dictionary to save correspondence image coordinates -> pointcloud coordinates
+        img_pc_coords = {}
+        for x_coord, y_coord in zip(x_, y_):
+            # Get buckets
+            x_bucket = int(x_coord)
+            y_bucket = int(y_coord)
+
+            x_idx = math.modf(x_coord)[0] * bucket_cap_l
+            y_idx = math.modf(y_coord)[0] * bucket_cap_h
+
+            x_img_coord = x_bucket * bucket_cap_l + int(x_idx)
+            y_img_coord = y_bucket * bucket_cap_h + int(y_idx)
+            
+            assert type(x_img_coord) is int
+            assert type(y_img_coord) is int
+            image[x_img_coord, y_img_coord] = 255
+            key = (x_img_coord, y_img_coord)
+            img_pc_coords[key] = (x_coord, y_coord)
+
+        return image, img_pc_coords
 
     def segment_pc(self, x, y, range_min):
         X = np.array((x, y)).T
 
-        from skimage.transform import hough_line, hough_line_peaks
-        image = self.transform_to_img(x, y)
-        tested_angles = np.linspace(-np.pi / 2, np.pi / 2, 360, endpoint=False)
-        h, theta, d = hough_line(image, theta=tested_angles)
-
-        # Generating figure 1
-        import matplotlib.pyplot as plt
-        from matplotlib import cm
-        fig, axes = plt.subplots(1, 3, figsize=(15, 6))
-        ax = axes.ravel()
-
-        ax[0].imshow(image, cmap=cm.gray)
-        ax[0].set_title('Input image')
-        ax[0].set_axis_off()
-
-        angle_step = 0.5 * np.diff(theta).mean()
-        d_step = 0.5 * np.diff(d).mean()
-        bounds = [np.rad2deg(theta[0] - angle_step),
-                np.rad2deg(theta[-1] + angle_step),
-                d[-1] + d_step, d[0] - d_step]
-        ax[1].imshow(np.log(1 + h), extent=bounds, cmap=cm.gray, aspect=1 / 1.5)
-        ax[1].set_title('Hough transform')
-        ax[1].set_xlabel('Angles (degrees)')
-        ax[1].set_ylabel('Distance (pixels)')
-        ax[1].axis('image')
-
-        ax[2].imshow(image, cmap=cm.gray)
-        ax[2].set_ylim((image.shape[0], 0))
-        ax[2].set_axis_off()
-        ax[2].set_title('Detected lines')
-
-        for _, angle, dist in zip(*hough_line_peaks(h, theta, d)):
-            (x0, y0) = dist * np.array([np.cos(angle), np.sin(angle)])
-            ax[2].axhline((x0, y0), slope=np.tan(angle + np.pi/2))
-
-        plt.tight_layout()
-        fig.savefig('./src/deep-rl-pusher/resources/look.png')
-        plt.close(fig)
-        
         from sklearn.cluster import DBSCAN
         cluster = DBSCAN(eps=range_min*2, min_samples=3).fit(X)
         return cluster.labels_
+
+    def find_cylinder(self, plot=False):
+        x, y, clusters = self.exclude_walls(self.x, self.y, self.clusters)
+        image, img_pc_coords = self.transform_to_img(x, y)
+        
+        if plot:
+            self.plot_pc_img(image)
+        cx, cy, radii = self.hough_transform(image)
+        return self.transform_area_to_pc(cx, cy, radii, img_pc_coords)
 
     def detect_objs(self, x, y, clusters):
         nr_clusters = (max(clusters) + 1)
@@ -130,28 +159,27 @@ class ObjectDetector:
         return classification
 
     # Return True if circle, False if line
-    def hough_transform(self, edges):
-        from skimage.transform import probabilistic_hough_line, hough_circle
-        from skimage.feature import peak_local_max
-        
-        #lines = probabilistic_hough_line(edges, threshold=10, line_length=5, line_gap=3)
-        hough_radii = np.arange(0.08, 1, 0.02)
-        lines = hough_circle(edges, hough_radii)
-        #print("Lines - {}".format(lines))
-        # TODO: check peak?
-        #print(len(list(lines)))
-        if list(lines):
-            #if len(lines) > 2:
-            #    return False
-            return True
-        else:
-            return False
+    def hough_transform(self, image, plot=False):
+        from skimage.transform import hough_circle, hough_circle_peaks
+        factor = 10**self.places
+        hough_radii = np.arange(0.08*2*factor, 0.5*2*factor, 0.02*2*factor)
+        res = hough_circle(image, hough_radii)
+        # Extract the peak as we only want the closest cylinder 
+        # (and the closest cylinder will have the largest amount of points and less noisy data)
+        accums, cx, cy, radii = hough_circle_peaks(res, hough_radii,
+                                        total_num_peaks=1)
+        if plot:
+            self.plot_hough_circle(image, cx, cy, radii)
+        return cx, cy, radii
 
-        # Another idea:
-        # Calculate curvature of the points in the cluster
-        # 1st : Sample 3 points from the cluster (first, last, middle)?
-        # 2nd : c (p1, p2, p3) = 4*A(area of the triangle created by the 3 points) / d(p1-p2)*d(p2-p3)*d(p3-p1)
-        # Curvature larger than a threshold is a line (lines are infinite curvatures)
+    def transform_area_to_pc(self, cx, cy, radii, img_pc_coords):
+        x = [], y = []
+        for img_coords, pc_coords in img_pc_coords.items():
+            # Point is in the selected area
+            if img_coords[0] in range(cx - radii, cx + radii) and img_coords[1] in range(cy - radii, cy + radii):
+                x.append(pc_coords[0])
+                y.append(pc_coords[1])
+        return np.array((x, y)).T        
 
     def calculate_point_dist(self, cluster, p):
         min_dist = 0
@@ -190,7 +218,7 @@ class ObjectDetector:
     def classify(self, edges):
         i = 0
         consensus = []
-        threshold = 12
+        threshold = 6
         while (i < 3):
             p1, p2, p3 = self.sample_cluster(edges)
             c = self.curvature(p1, p2, p3)
@@ -202,7 +230,12 @@ class ObjectDetector:
         if (np.sum(consensus) > 1) : return True
         else : return False
 
-    def plot_clusters(self, x, y, clusters, classification):
+    def calculate_nr_clusters(self, clusters):
+        nr_clusters = (max(clusters) + 1)
+        return nr_clusters - min(clusters)
+
+    def plot_clusters(self, x, y, clusters):
+    #def plot_clusters(self, x, y, clusters, classification):
         import matplotlib.pyplot as plt
         import matplotlib
         matplotlib.use('Agg')
@@ -216,7 +249,7 @@ class ObjectDetector:
         plt.close(fig)
 
         # TODO: clusters look ok but classification not??
-        markers = []
+        '''markers = []
         nr_clusters = (max(clusters) + 1)
         for i in range(min(clusters), nr_clusters):
             marker = 'tab:orange' if classification[i] else 'tab:gray'
@@ -229,6 +262,69 @@ class ObjectDetector:
         ax.scatter(x, y, s=.3, c=markers)
 
         fig.savefig('./src/deep-rl-pusher/resources/objects.png')
-        plt.close(fig)
+        plt.close(fig)'''
 
         # TODO Filter out world end points
+
+    def plot_hough_linear(self, image, theta, h, d):
+        # Generating figure 1
+        import matplotlib.pyplot as plt
+        from matplotlib import cm
+        from skimage.transform import hough_line_peaks
+
+        fig, axes = plt.subplots(1, 3, figsize=(15, 6))
+        ax = axes.ravel()
+
+        ax[0].imshow(image, cmap=cm.gray)
+        ax[0].set_title('Input image')
+        ax[0].set_axis_off()
+
+        angle_step = 0.5 * np.diff(theta).mean()
+        d_step = 0.5 * np.diff(d).mean()
+        bounds = [np.rad2deg(theta[0] - angle_step),
+                np.rad2deg(theta[-1] + angle_step),
+                d[-1] + d_step, d[0] - d_step]
+        ax[1].imshow(np.log(1 + h), extent=bounds, cmap=cm.gray, aspect=1 / 1.5)
+        ax[1].set_title('Hough transform')
+        ax[1].set_xlabel('Angles (degrees)')
+        ax[1].set_ylabel('Distance (pixels)')
+        ax[1].axis('image')
+
+        ax[2].imshow(image, cmap=cm.gray)
+        ax[2].set_ylim((image.shape[0], 0))
+        ax[2].set_axis_off()
+        ax[2].set_title('Detected lines')
+
+        for _, angle, dist in zip(*hough_line_peaks(h, theta, d)):
+            (x0, y0) = dist * np.array([np.cos(angle), np.sin(angle)])
+            ax[2].axline((x0, y0), slope=np.tan(angle + np.pi/2))
+
+        plt.tight_layout()
+        fig.savefig('./src/deep-rl-pusher/resources/lines.png')
+        plt.close(fig)
+
+    def plot_hough_circle(self, image, cx, cy, radii):
+        # Generating figure 1
+        import matplotlib.pyplot as plt
+        from skimage.draw import circle_perimeter
+
+        fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
+        for center_y, center_x, radius in zip(cy, cx, radii):
+            circy, circx = circle_perimeter(center_y, center_x, int(math.ceil(radius)),
+                                            shape=image.shape)
+            image[circy, circx] = 50
+
+        ax.set_title('Circle Hough')
+        ax.imshow(image, cmap=plt.cm.gray)
+        plt.tight_layout()
+        fig.savefig('./src/deep-rl-pusher/resources/circles.png')
+        plt.close(fig)
+
+    def plot_pc_img(self, image):
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
+        ax.imshow(image)
+        plt.tight_layout()
+        fig.savefig('./src/deep-rl-pusher/resources/pc_image.png')
+        plt.close(fig)
