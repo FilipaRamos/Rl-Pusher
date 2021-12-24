@@ -2,17 +2,17 @@
 import rospy
 
 from objectDetector import ObjectDetector
-from src.deepPusher import DeepPusher
+from deepPusher import DeepPusher
 
 if __name__ == '__main__':
-    rospy.init_node('object-detector', anonymous=True)
+    rospy.init_node('object_detector', anonymous=True)
     rate = rospy.Rate(10) # 10hz
     counter = 0
-    pusher = DeepPusher()
-    det = ObjectDetector()
 
+    det = ObjectDetector()
+    pusher = DeepPusher(det)
+    #rospy.spin()
     while not rospy.is_shutdown():
-        rospy.spin()
-        pusher.state_manager(counter)
+        pusher.registry_manager(counter)
         counter += 1
         rate.sleep()

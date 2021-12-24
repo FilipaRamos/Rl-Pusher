@@ -79,19 +79,21 @@ class ObjectDetector:
             clusters.extend(tmp_clusters)
         return x, y, clusters
 
-    def transform_to_img(self, x, y):
+    def transform_to_img(self, x, y, clusters):
         import math
+        sizes = self.calculate_cluster_sizes(clusters)
 
         min_x = round(min(x), self.places)
         min_y = round(min(y), self.places)
 
         # Transform points to 0+ scale
-        x_, y_ = [], []
-        for x_coord, y_coord in zip(x, y):
+        x_, y_, clusters_ = [], [], []
+        for x_coord, y_coord, cluster in zip(x, y, clusters):
             x_coord = round(x_coord, self.places) + abs(min_x)
             y_coord = round(y_coord, self.places) + abs(min_y)
             x_.append(x_coord)
             y_.append(y_coord)
+            clusters_.append(cluster)
 
         # Calculate length, height
         max_x_ = max(x_)
@@ -108,7 +110,7 @@ class ObjectDetector:
 
         # Create a dictionary to save correspondence image coordinates -> pointcloud coordinates
         img_pc_coords = {}
-        for x_coord, y_coord in zip(x_, y_):
+        for x_coord, y_coord, c in zip(x_, y_, clusters_):
             # Get buckets
             x_bucket = int(x_coord)
             y_bucket = int(y_coord)
@@ -122,8 +124,11 @@ class ObjectDetector:
             assert type(x_img_coord) is int
             assert type(y_img_coord) is int
             image[x_img_coord, y_img_coord] = 255
-            key = (x_img_coord, y_img_coord)
-            img_pc_coords[key] = (x_coord, y_coord)
+
+            key = (y_img_coord, x_img_coord)
+            x_img_pc = x_coord - abs(min_x)
+            y_img_pc = y_coord - abs(min_y)
+            img_pc_coords[key] = (x_img_pc, y_img_pc, sizes[c])
 
         return image, img_pc_coords
 
@@ -136,11 +141,11 @@ class ObjectDetector:
 
     def find_cylinder(self, plot=False):
         x, y, clusters = self.exclude_walls(self.x, self.y, self.clusters)
-        image, img_pc_coords = self.transform_to_img(x, y)
+        image, img_pc_coords = self.transform_to_img(x, y, clusters)
         
         if plot:
             self.plot_pc_img(image)
-        cx, cy, radii = self.hough_transform(image)
+        cx, cy, radii = self.hough_transform(image, plot=plot)
         return self.transform_area_to_pc(cx, cy, radii, img_pc_coords)
 
     def detect_objs(self, x, y, clusters):
@@ -173,13 +178,16 @@ class ObjectDetector:
         return cx, cy, radii
 
     def transform_area_to_pc(self, cx, cy, radii, img_pc_coords):
-        x = [], y = []
+        x, y = [], []
+        cluster_size = 0
         for img_coords, pc_coords in img_pc_coords.items():
             # Point is in the selected area
-            if img_coords[0] in range(cx - radii, cx + radii) and img_coords[1] in range(cy - radii, cy + radii):
+            if img_coords[0] in range(int(cx - radii), int(cx + radii)) and img_coords[1] in range(int(cy - radii), int(cy + radii)):
                 x.append(pc_coords[0])
                 y.append(pc_coords[1])
-        return np.array((x, y)).T        
+                cluster_size = pc_coords[2]
+        X = np.array((x, y)).T
+        return X, cluster_size
 
     def calculate_point_dist(self, cluster, p):
         min_dist = 0
@@ -233,6 +241,10 @@ class ObjectDetector:
     def calculate_nr_clusters(self, clusters):
         nr_clusters = (max(clusters) + 1)
         return nr_clusters - min(clusters)
+
+    def calculate_cluster_sizes(self, clusters):
+        from collections import Counter
+        return Counter(clusters)
 
     def plot_clusters(self, x, y, clusters):
     #def plot_clusters(self, x, y, clusters, classification):
