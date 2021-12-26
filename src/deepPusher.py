@@ -7,6 +7,7 @@ import liveplot
 import numpy as np
 
 from rl import qlearn
+from functools import reduce
 
 
 class Cylinder:
@@ -56,17 +57,21 @@ class DeepPusher:
     def setup(self, out_dir='../tmp/experiments'):
         env = gym.make('deep-rl-pusher')
         self.outdir = out_dir
+
         self.env = gym.wrappers.Monitor(env, self.outdir, force=True)
         self.plotter = liveplot.LivePlot(self.outdir)
 
         # TODO: Params
         self.last_time_steps = np.ndarray(0)
         self.qlearn = qlearn.QLearn(actions=range(self.env.action_space.n),
-                    alpha=0.1, gamma=0.9, epsilon=0.9)
+                    alpha=0.2, gamma=0.8, epsilon=0.9)
+
         self.initial_epsilon = self.qlearn.epsilon
-        self.epsilon_discount = 0.998
+        self.epsilon_discount = 0.9986
+
         self.start_time = time.time()
         self.total_episodes = 10000
+
         self.highest_reward = 0
 
     def cycle(self):
@@ -75,15 +80,51 @@ class DeepPusher:
             cumulated_reward = 0
             observation = self.env.reset()
 
-            if self.qlearn.epsilon > 0.1:
+            if self.qlearn.epsilon > 0.05:
                 self.qlearn.epsilon *= self.epsilon_discount
             
             self.render()
             state = ''.join(map(str, observation))
 
-            for i in range(1000):
+            for i in range(1500):
                 # Pick action based on current state
                 action = self.qlearn.chooseAction(state)
 
                 # Execute action and receive the reward
-                observation, reward, done, info = self.env.step()
+                observation, reward, done, info = self.env.step(action)
+                cumulated_reward += reward
+
+                if self.highest_reward < cumulated_reward:
+                    self.highest_reward = cumulated_reward
+
+                nextState = ''.join(map(str, observation))
+                self.qlearn.learn(state, action, reward, nextState)
+
+                self.env._flush(force=True)
+
+                if not(done):
+                    state = nextState
+                else:
+                    self.last_time_steps = np.append(self.last_time_steps, [int(i + 1)])
+                    break
+
+            if x % 100 == 0:
+                self.plotter.plot(self.env)
+
+            m, s = divmod(int(time.time() - self.start_time), 60)
+            h, m = divmod(m, 60)
+            print("Epoch: " + str(x + 1) + "- [alpha: " + str(round(qlearn.alpha,2)) + 
+            " - gamma: " + str(round(qlearn.gamma,2)) + " - epsilon: " + str(round(qlearn.epsilon,2)) + 
+            "] - Reward: " + str(cumulated_reward) + "     Time: %d:%02d:%02d" % (h, m, s))
+
+        print ("\n|" + str(self.total_episodes) + "|" + str(qlearn.alpha) + "|" + str(qlearn.gamma) + "|" + str(self.initial_epsilon) +
+                    "*" + str(self.epsilon_discount) + "|" + str(self.highest_reward) + "| PICTURE |")
+
+        l = self.last_time_steps.tolist()
+        l.sort()
+
+        #print("Parameters: a="+str)
+        print("Overall score: {:0.2f}".format(self.last_time_steps.mean()))
+        print("Best 100 score: {:0.2f}".format(reduce(lambda x, y: x + y, l[-100:]) / len(l[-100:])))
+
+        self.env.close()
