@@ -3,21 +3,21 @@ import gym
 from gym import wrappers
 
 import time
-import liveplot
 import numpy as np
 
 from rl import qlearn
 from functools import reduce
 
+from envs import deepPusherEnv
 
-class Cylinder:
+class Cylinder():
     def __init__(self, points):
         self.points = points
 
     def set_points(self, points_n):
         self.points = points_n
 
-class DeepPusher:
+class DeepPusher():
     '''
         DeepPusher class
         @param objectDetector - class that provides the cylinder detection
@@ -55,11 +55,11 @@ class DeepPusher:
             self.env.render(close=True)
 
     def setup(self, out_dir='../tmp/experiments'):
-        env = gym.make('deep-rl-pusher')
+        env = gym.make('deepPusher-v0')
         self.outdir = out_dir
 
         self.env = gym.wrappers.Monitor(env, self.outdir, force=True)
-        self.plotter = liveplot.LivePlot(self.outdir)
+        #self.plotter = liveplot.LivePlot(self.outdir)
 
         # TODO: Params
         self.last_time_steps = np.ndarray(0)
@@ -109,7 +109,8 @@ class DeepPusher:
                     break
 
             if x % 100 == 0:
-                self.plotter.plot(self.env)
+                print(self.env)
+                #self.plotter.plot(self.env)
 
             m, s = divmod(int(time.time() - self.start_time), 60)
             h, m = divmod(m, 60)
@@ -128,3 +129,11 @@ class DeepPusher:
         print("Best 100 score: {:0.2f}".format(reduce(lambda x, y: x + y, l[-100:]) / len(l[-100:])))
 
         self.env.close()
+
+if __name__ == '__main__':
+    from objectDetector import ObjectDetector
+    det = ObjectDetector()
+    dp = DeepPusher(det)
+    dp.setup()
+    dp.cycle()
+    print("Cycle done...")

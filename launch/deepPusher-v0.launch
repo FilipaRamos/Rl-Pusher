@@ -16,10 +16,10 @@
   <env name="GAZEBO_MODEL_PATH" value="$(find deep-rl-pusher)/models"/>
   <include file="$(find deep-rl-pusher)/launch/cfg-gazebo.launch">
     <arg name="world_name" value="$(find deep-rl-pusher)/worlds/$(arg world).world"/>
-    <arg name="paused" value="false"/>
+    <arg name="paused" value="true"/>
     <arg name="use_sim_time" value="true"/>
-    <arg name="gui" value="true"/>
-    <arg name="headless" value="false"/>
+    <arg name="gui" value="false"/>
+    <arg name="headless" value="true"/>
     <arg name="debug" value="false"/>
   </include>
 
@@ -30,5 +30,6 @@
     <arg name="model" value="$(arg model)"/>
   </include>
 
-  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find deep-rl-pusher)/rviz/cfg-trajectory.rviz"/>
+  <!-- Don't need rviz for now 
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find deep-rl-pusher)/rviz/cfg-trajectory.rviz"/> -->
 </launch>
