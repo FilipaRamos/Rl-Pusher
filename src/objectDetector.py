@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-from numpy.core.numeric import Inf, NaN
-from numpy.lib.function_base import _calculate_shapes, append
-from sklearn import cluster
 import rospy
 import math
 import numpy as np
+from sklearn import cluster
+from numpy.core.numeric import Inf
 
 from nav_msgs.msg import Path
 from nav_msgs.msg import Odometry
@@ -16,10 +15,10 @@ class ObjectDetector:
     def __init__(self):
 
         self.laser_sub = rospy.Subscriber("/scan", LaserScan, self.laser_callback, queue_size=1)
-        self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback, queue_size=1)
+        #self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback, queue_size=1)
 
-        self.traj_pub = rospy.Publisher('trajectory', Path, queue_size=1000)
-        self.traj_msg = Path()
+        #self.traj_pub = rospy.Publisher('trajectory', Path, queue_size=1000)
+        #self.traj_msg = Path()
 
         self.precision = 0.01
         self.places = 2
@@ -250,14 +249,14 @@ class ObjectDetector:
     #def plot_clusters(self, x, y, clusters, classification):
         import matplotlib.pyplot as plt
         import matplotlib
-        matplotlib.use('Agg')
+        #matplotlib.use('Agg')
 
         fig, ax = plt.subplots(nrows=1, ncols=1)
         ax.set_xlabel('x')
         ax.set_ylabel('y')
         ax.scatter(x, y, s=.3, c=clusters)
 
-        fig.savefig('./src/deep-rl-pusher/resources/clusters.png')
+        fig.savefig('../resources/clusters.png')
         plt.close(fig)
 
         # TODO: clusters look ok but classification not??
@@ -312,7 +311,7 @@ class ObjectDetector:
             ax[2].axline((x0, y0), slope=np.tan(angle + np.pi/2))
 
         plt.tight_layout()
-        fig.savefig('./src/deep-rl-pusher/resources/lines.png')
+        fig.savefig('../resources/lines.png')
         plt.close(fig)
 
     def plot_hough_circle(self, image, cx, cy, radii):
@@ -329,7 +328,7 @@ class ObjectDetector:
         ax.set_title('Circle Hough')
         ax.imshow(image, cmap=plt.cm.gray)
         plt.tight_layout()
-        fig.savefig('./src/deep-rl-pusher/resources/circles.png')
+        fig.savefig('../resources/circles.png')
         plt.close(fig)
 
     def plot_pc_img(self, image):
@@ -338,5 +337,5 @@ class ObjectDetector:
         fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
         ax.imshow(image)
         plt.tight_layout()
-        fig.savefig('./src/deep-rl-pusher/resources/pc_image.png')
+        fig.savefig('../resources/pc_image.png')
         plt.close(fig)

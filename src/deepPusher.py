@@ -10,27 +10,28 @@ from functools import reduce
 
 from envs import deepPusherEnv
 
-class Cylinder():
-    def __init__(self, points):
+class TargetCylinder():
+    def __init__(self, points, pos):
         self.points = points
+        self.current_pos = (pos[1], pos[2])
 
     def set_points(self, points_n):
         self.points = points_n
+
+    def set_cur_pos(self, newpos):
+        self.current_pos = (newpos[1], newpos[2])
 
 class DeepPusher():
     '''
         DeepPusher class
         @param objectDetector - class that provides the cylinder detection
         @param state - variable that describes the behaviour that the robot must take
-
-        State 0 - Init state where we must search for a cylinder
-        State 1 - Registered a cylinder
     '''
     def __init__(self, objectDetector):
         self.state = 0
         self.frequency = 10
         self.objDet = objectDetector
-        self.cylinder = Cylinder([])
+        self.cylinder = TargetCylinder([])
 
     def registry_manager(self, counter):
         if counter > 0 and counter % self.frequency == 0:
@@ -43,12 +44,12 @@ class DeepPusher():
             # TODO: nr img points?
             if points.size >= cluster_size - 1:
                 self.cylinder.set_points(points)
-                print("[LOG] Registered cylinder", self.cylinder.points)
+                print("[ LOG] Registered cylinder", self.cylinder.points)
             else:
-                print("[LOG] Not registering the cylinder as there were less points than expected for the cluster size.")
-        else: print("[LOG] Not registering the cylinder as there were not enough points for assessment.")
+                print("[ LOG] Not registering the cylinder as there were less points than expected for the cluster size.")
+        else: print("[ LOG] Not registering the cylinder as there were not enough points for assessment.")
 
-    def render(self, x, render_skip=0, render_interval=50, render_episodes=10):
+    def render(self, x, render_skip = 0, render_interval = 50, render_episodes = 10):
         if (x % render_interval == 0) and (x != 0) and (x > render_skip):
             self.env.render()
         elif ((x - render_episodes) % render_interval == 0) and (x != 0) and (x > render_skip) and (render_episodes < x):
@@ -73,8 +74,10 @@ class DeepPusher():
         self.total_episodes = 10000
 
         self.highest_reward = 0
+        print("[ LOG] deepPusher setup done!")
 
     def cycle(self):
+        print("[ LOG] Initiating cycle!")
         for x in range(self.total_episodes):
             done = False
             cumulated_reward = 0
@@ -83,7 +86,7 @@ class DeepPusher():
             if self.qlearn.epsilon > 0.05:
                 self.qlearn.epsilon *= self.epsilon_discount
             
-            self.render()
+            self.render(x)
             state = ''.join(map(str, observation))
 
             for i in range(1500):
@@ -98,7 +101,7 @@ class DeepPusher():
                     self.highest_reward = cumulated_reward
 
                 nextState = ''.join(map(str, observation))
-                self.qlearn.learn(state, action, reward, nextState)
+                self.qlearn.learn(state, nextState, action, reward)
 
                 self.env._flush(force=True)
 
@@ -114,11 +117,11 @@ class DeepPusher():
 
             m, s = divmod(int(time.time() - self.start_time), 60)
             h, m = divmod(m, 60)
-            print("Epoch: " + str(x + 1) + "- [alpha: " + str(round(qlearn.alpha,2)) + 
-            " - gamma: " + str(round(qlearn.gamma,2)) + " - epsilon: " + str(round(qlearn.epsilon,2)) + 
+            print("Epoch: " + str(x + 1) + "- [alpha: " + str(round(self.qlearn.alpha,2)) + 
+            " - gamma: " + str(round(self.qlearn.gamma,2)) + " - epsilon: " + str(round(self.qlearn.epsilon,2)) + 
             "] - Reward: " + str(cumulated_reward) + "     Time: %d:%02d:%02d" % (h, m, s))
 
-        print ("\n|" + str(self.total_episodes) + "|" + str(qlearn.alpha) + "|" + str(qlearn.gamma) + "|" + str(self.initial_epsilon) +
+        print ("\n|" + str(self.total_episodes) + "|" + str(self.qlearn.alpha) + "|" + str(self.qlearn.gamma) + "|" + str(self.initial_epsilon) +
                     "*" + str(self.epsilon_discount) + "|" + str(self.highest_reward) + "| PICTURE |")
 
         l = self.last_time_steps.tolist()
@@ -136,4 +139,5 @@ if __name__ == '__main__':
     dp = DeepPusher(det)
     dp.setup()
     dp.cycle()
-    print("Cycle done...")
+    print("[ LOG] Reached the end... Closing!")
+    dp._close()

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import gym
 import json
 import rospy
@@ -20,19 +21,36 @@ class DeepPusherEnv(MainEnv):
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
-        # Only allow front, left, right, back movement
-        self.action_space = spaces.Discrete(3)
-        self.reward_range(-np.inf, np.inf)
-        self._seed()
-        # Load sensor config
+        # Load configs
         self.lidar = self.load_lidar_config()['lidar']
+        self.actions = self.load_actions_config()['actions']
+        rewards_cfg = self.load_rewards_config()['rewards']
+        self.obs_idx_r, self.obs_idx_p, self.rewards, self.penalties = rewards_cfg['obs_index_r'], rewards_cfg['obs_index_p'], \
+                                                                       rewards_cfg['rewards'], rewards_cfg['penalties']
+
+        # Class that handles all navigation
         self.navigator = Navigator()
 
-    def load_lidar_config(self, config="./config/lidar.config"):
+        # Actions are loaded from config
+        self.action_space = spaces.Discrete(len(self.actions))
+        self.reward_range = (-np.inf, np.inf)
+        self._seed()
+
+    def load_lidar_config(self, config="../config/lidar.config"):
         data = None
         with open(config) as j_file:
             data = json.load(j_file)        
         return data
+
+    def load_actions_config(self, config="../config/actions.config"):
+        with open(config) as j_file:
+            actions = json.load(j_file)
+        return actions
+
+    def load_rewards_config(self, config="../config/rewards.config"):
+        with open(config) as j_file:
+            rewards = json.load(j_file)
+        return rewards
 
     def discretize_observation(self, data, new_ranges):
         d_ranges = []
@@ -54,6 +72,9 @@ class DeepPusherEnv(MainEnv):
 
         return d_ranges, done
 
+    def robot_pos(self):
+        return self.navigator.get_robot_pos()
+
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
@@ -65,11 +86,25 @@ class DeepPusherEnv(MainEnv):
         except (rospy.ServiceException) as e:
             print("[LOG] /gazebo/unpause_physics service call failed")
 
-        if action == 0:
+        self.new_cylinder_position = None
+        self.old_cylinder_position = None
+        moved_cylinder = False
+        moved_object = False
+
+        if action == self.actions['none']:
+            moved_robot = False
+            self.navigator.do_nothing()
+        elif action == self.actions['push_forward']:
+            self.navigator.push_forward(0.3)
+        elif action == self.actions['push_left']:
+            self.navigator.push_left(0.3)
+        elif action == self.actions['push_right']:
+            self.navigator.push_right(0.3)
+        elif action == self.actions['move_forward']:
             self.navigator.move_forward(0.3)
-        elif action == 1:
+        elif action == self.actions['move_left']:
             self.navigator.move_left(0.3)
-        elif action == 2:
+        elif action == self.actions['move_right']:
             self.navigator.move_right(0.3)
 
         data = None
@@ -80,7 +115,7 @@ class DeepPusherEnv(MainEnv):
             except:
                 pass
 
-        rospy.wait_for_message('/gazebo/pause_physics')
+        rospy.wait_for_service('/gazebo/pause_physics')
         try:
             self.pause()
         except (rospy.ServiceException) as e:
@@ -89,6 +124,8 @@ class DeepPusherEnv(MainEnv):
         state, done = self.discretize_observation(data, 5)
 
         if not done:
+            # TODO: check where we are, at goal, pushing, moving, etc...
+            position, orientation = self.robot_pos()
             if action == 0:
                 reward = 5
             else:

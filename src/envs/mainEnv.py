@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import sys
 import gym
@@ -8,12 +9,11 @@ import subprocess
 
 from rosgraph_msgs.msg import Clock
 
-class MainEnv():
+class MainEnv(gym.Env):
     '''My Main Custom Env class following gym interface'''
     metadata = {'render.modes': ['human']}
 
     def __init__(self, launch_file):
-        super(MainEnv, self).__init__()
         self.last_clock_msg = Clock()
 
         # Set port variables
@@ -21,8 +21,8 @@ class MainEnv():
         self.port = str(random_number)
         self.port_gazebo = str(random_number + 1)
 
-        #os.environ["ROS_MASTER_URI"] = "http://localhost:" + self.port
-        #os.environ["GAZEBO_MASTER_URI"] = "http://localhost:" + self.port_gazebo
+        os.environ["ROS_MASTER_URI"] = "http://localhost:" + self.port
+        os.environ["GAZEBO_MASTER_URI"] = "http://localhost:" + self.port_gazebo
 
         ros_path = os.path.dirname(subprocess.check_output(["which", "roscore"]))
         path = os.path.join('../launch/', launch_file)
@@ -32,7 +32,6 @@ class MainEnv():
         self._roslaunch = subprocess.Popen([sys.executable, os.path.join(ros_path, b"roslaunch"),
                 "-p", self.port, path])
 
-        print("[LOG] Just launched")
         self.gazeboc_pid = 0
         rospy.init_node('gym', anonymous=True)
 
