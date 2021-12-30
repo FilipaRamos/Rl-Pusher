@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import time
 import rospy
 import math
 import numpy as np
@@ -10,15 +11,10 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import PoseStamped
 
-class ObjectDetector:
+class ObjectDetector():
 
     def __init__(self):
-
         self.laser_sub = rospy.Subscriber("/scan", LaserScan, self.laser_callback, queue_size=1)
-        #self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback, queue_size=1)
-
-        #self.traj_pub = rospy.Publisher('trajectory', Path, queue_size=1000)
-        #self.traj_msg = Path()
 
         self.precision = 0.01
         self.places = 2
@@ -27,18 +23,6 @@ class ObjectDetector:
         self.x, self.y = self.generate_pc(msg.ranges, msg.range_min, msg.range_max, msg.angle_increment)
         self.clusters = self.segment_pc(self.x, self.y, msg.range_min)
         self.plot_clusters(self.x, self.y, self.clusters)
-
-    def odom_callback(self, msg):
-        pose = PoseStamped()
-        pose.header = msg.header
-        pose.pose = msg.pose.pose
-        self.trajectory_publisher(msg, pose)
-
-    def trajectory_publisher(self, msg, pose):
-        self.traj_msg.header = msg.header
-        self.traj_msg.poses.append(pose)
-
-        self.traj_pub.publish(self.traj_msg)
 
     def generate_pc(self, ranges, range_min, range_max, angle_increment):
         ranges = np.array(ranges)
@@ -147,21 +131,6 @@ class ObjectDetector:
         cx, cy, radii = self.hough_transform(image, plot=plot)
         return self.transform_area_to_pc(cx, cy, radii, img_pc_coords)
 
-    def detect_objs(self, x, y, clusters):
-        nr_clusters = (max(clusters) + 1)
-        classification = []
-        for i in range(min(clusters), nr_clusters):
-            x_c = np.array([x_ for x_, y_, c in zip(x, y, clusters) if c == i and x_ != Inf])
-            y_c = np.array([y_ for x_, y_, c in zip(x, y, clusters) if c == i and y_ != Inf])
-            # If the cluster has more than 20 points, it is probably the wall
-            if x_c.shape[0] > 20 or x_c.shape[0] < 3:
-                classification.append(False)
-                continue
-            cluster = np.array((x_c, y_c)).T
-            #classification.append(self.hough_transform(cluster))
-            classification.append(self.classify(cluster))
-        return classification
-
     # Return True if circle, False if line
     def hough_transform(self, image, plot=False):
         from skimage.transform import hough_circle, hough_circle_peaks
@@ -200,43 +169,6 @@ class ObjectDetector:
     def calculate_dist(self, p1, p2):
         return math.sqrt((p1[0]-p2[0])**2 + (p1[1]-p2[1])**2)
 
-    def sample_cluster(self, cluster):
-        import random
-        if (cluster.shape[0] > 3) :
-            p1 = random.randint(0, cluster.shape[0] - 1)
-            p2 = random.choice([i for i in range(0, cluster.shape[0] - 1) if i not in [p1]])
-            p3 = random.choice([i for i in range(0, cluster.shape[0] - 1) if i not in [p1, p2]])
-            while (self.calculate_point_dist(cluster, cluster[p2]) == self.calculate_dist(cluster[p1], cluster[p2])) :
-                p2_ = p2
-                p2 = random.choice([i for i in range(0, cluster.shape[0] - 1) if i not in [p1, p2_]])
-            while (self.calculate_point_dist(cluster, cluster[p3]) == self.calculate_dist(cluster[p2], cluster[p3]) 
-                    and self.calculate_point_dist(cluster, cluster[p3]) == self.calculate_dist(cluster[p1], cluster[p3])) :
-                p3_ = p3
-                p3 = random.choice([i for i in range(0, cluster.shape[0] - 1) if i not in [p1, p2, p3_]])
-            return cluster[p1], cluster[p2], cluster[p3]
-        return cluster[0], cluster[1], cluster[2]
-
-    def curvature(self, p1, p2, p3):
-        area = (p2[0]-p1[0])*(p3[1]-p1[1]) - (p2[1]-p1[1])*(p3[0]-p1[0])
-        return abs(4*area / (self.calculate_dist(p1, p2) * self.calculate_dist(p2, p3) * self.calculate_dist(p3, p1)))
-
-    # Binary classification
-    # @return true if object is thought to be a cylinder
-    def classify(self, edges):
-        i = 0
-        consensus = []
-        threshold = 6
-        while (i < 3):
-            p1, p2, p3 = self.sample_cluster(edges)
-            c = self.curvature(p1, p2, p3)
-            print("----", c)
-            # C = 1/R (in a line R->infinity, so C tends to 0)
-            if (c < threshold): consensus.append(0)
-            else: consensus.append(1)
-            i += 1
-        if (np.sum(consensus) > 1) : return True
-        else : return False
-
     def calculate_nr_clusters(self, clusters):
         nr_clusters = (max(clusters) + 1)
         return nr_clusters - min(clusters)
@@ -246,7 +178,6 @@ class ObjectDetector:
         return Counter(clusters)
 
     def plot_clusters(self, x, y, clusters):
-    #def plot_clusters(self, x, y, clusters, classification):
         import matplotlib.pyplot as plt
         import matplotlib
         #matplotlib.use('Agg')
@@ -258,24 +189,6 @@ class ObjectDetector:
 
         fig.savefig('../resources/clusters.png')
         plt.close(fig)
-
-        # TODO: clusters look ok but classification not??
-        '''markers = []
-        nr_clusters = (max(clusters) + 1)
-        for i in range(min(clusters), nr_clusters):
-            marker = 'tab:orange' if classification[i] else 'tab:gray'
-            c_marker = [marker for cluster in clusters if cluster == i]
-            markers.extend(c_marker)
-        #markers = [item for sublist in markers for item in sublist]
-        fig, ax = plt.subplots(nrows=1, ncols=1)
-        ax.set_label('x')
-        ax.set_label('y')
-        ax.scatter(x, y, s=.3, c=markers)
-
-        fig.savefig('./src/deep-rl-pusher/resources/objects.png')
-        plt.close(fig)'''
-
-        # TODO Filter out world end points
 
     def plot_hough_linear(self, image, theta, h, d):
         # Generating figure 1
@@ -339,3 +252,51 @@ class ObjectDetector:
         plt.tight_layout()
         fig.savefig('../resources/pc_image.png')
         plt.close(fig)
+
+class TargetCylinder():
+    def __init__(self, points, pos):
+        self.points = points
+        self.current_pos = np.asarray(pos)
+
+    def set_points(self, points_n):
+        self.points = points_n
+
+    def set_cur_pos(self, newpos):
+        self.current_pos = np.asarray(newpos)
+
+    def get_layout_dict(self):
+        return { 'target_cyl': [self.current_pos] }
+
+class Observer():
+    ''' Class that encapsulates the robot's observation of the world '''
+    def __init__(self):
+        self.det = ObjectDetector()
+        self.start_ns = time.time_ns()
+
+        # Registry control and target cylinder object
+        self.register = True
+        self.cyl = TargetCylinder([], [0, 0, 0])
+
+        # Dict with observed positions
+        self.ob_layout = self.cyl.get_layout_dict()
+
+    def observe(self, force_ob_cyl=False):
+        cur_ns = time.time_ns()
+        if (cur_ns - self.start_ns) % 10 == 0 and self.register:
+            self.target_cyl = self.register_cylinder()
+            self.register = False
+        elif force_ob_cyl:
+            self.target_cyl = self.register_cylinder()
+        elif not self.register:
+            self.ob_layout = self.cyl.get_layout_dict()
+
+    def register_cylinder(self):
+        points, cluster_size = self.det.find_cylinder(plot=True)
+        if points.size > 3:
+            # TODO: nr img points?
+            if points.size >= cluster_size - 1:
+                self.cyl.set_points(points)
+                print("[ LOG] Registered cylinder", self.cylinder.points)
+            else:
+                print("[ LOG] Not registering the cylinder as there were less points than expected for the cluster size.")
+        else: print("[ LOG] Not registering the cylinder as there were not enough points for assessment.")

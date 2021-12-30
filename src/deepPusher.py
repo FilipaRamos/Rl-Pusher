@@ -10,44 +10,17 @@ from functools import reduce
 
 from envs import deepPusherEnv
 
-class TargetCylinder():
-    def __init__(self, points, pos):
-        self.points = points
-        self.current_pos = (pos[1], pos[2])
-
-    def set_points(self, points_n):
-        self.points = points_n
-
-    def set_cur_pos(self, newpos):
-        self.current_pos = (newpos[1], newpos[2])
-
 class DeepPusher():
     '''
         DeepPusher class
         @param objectDetector - class that provides the cylinder detection
         @param state - variable that describes the behaviour that the robot must take
     '''
-    def __init__(self, objectDetector):
+    def __init__(self, observer):
+        self.ob = observer
+        
         self.state = 0
         self.frequency = 10
-        self.objDet = objectDetector
-        self.cylinder = TargetCylinder([])
-
-    def registry_manager(self, counter):
-        if counter > 0 and counter % self.frequency == 0:
-            self.register_cylinder()
-            self.state = 0
-    
-    def register_cylinder(self):
-        points, cluster_size = self.objDet.find_cylinder(plot=True)
-        if points.size > 3:
-            # TODO: nr img points?
-            if points.size >= cluster_size - 1:
-                self.cylinder.set_points(points)
-                print("[ LOG] Registered cylinder", self.cylinder.points)
-            else:
-                print("[ LOG] Not registering the cylinder as there were less points than expected for the cluster size.")
-        else: print("[ LOG] Not registering the cylinder as there were not enough points for assessment.")
 
     def render(self, x, render_skip = 0, render_interval = 50, render_episodes = 10):
         if (x % render_interval == 0) and (x != 0) and (x > render_skip):
@@ -134,9 +107,9 @@ class DeepPusher():
         self.env.close()
 
 if __name__ == '__main__':
-    from objectDetector import ObjectDetector
-    det = ObjectDetector()
-    dp = DeepPusher(det)
+    from observer import Observer
+    ob = Observer()
+    dp = DeepPusher(ob)
     dp.setup()
     dp.cycle()
     print("[ LOG] Reached the end... Closing!")

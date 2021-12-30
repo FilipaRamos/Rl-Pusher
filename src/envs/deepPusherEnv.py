@@ -52,6 +52,29 @@ class DeepPusherEnv(MainEnv):
             rewards = json.load(j_file)
         return rewards
 
+    def robot_pos(self):
+        return self.navigator.get_robot_pos()
+
+    def dist_goal(self):
+        pos = [self.goal['pos']['x'], self.goal['pos']['y'], self.goal['pos']['z']]
+        return self.dist_xy(pos)
+
+    def dist_target_cyl_goal(self, c_pos):
+        g_pos = [self.goal['pos']['x'], self.goal['pos']['y'], self.goal['pos']['z']]
+        return np.sqrt(np.sum(np.square(c_pos - g_pos)))
+
+    def dist_xy(self, pos):
+        robot_pos, _ = self.robot_pos()
+        pos = np.asarray(pos)
+
+        if pos.shape == (3,):
+            pos = pos[:2]
+        return np.sqrt(np.sum(np.square(pos - robot_pos[:2])))
+
+    def reg_bel_layout(self, layout_d):
+        assert 'target_cyl' in layout_d
+        self.layout = layout_d
+
     def discretize_observation(self, data, new_ranges):
         d_ranges = []
         t_range = 0.2
@@ -72,8 +95,11 @@ class DeepPusherEnv(MainEnv):
 
         return d_ranges, done
 
-    def robot_pos(self):
-        return self.navigator.get_robot_pos()
+    def observe(self):
+        # TODO
+        # if self.observe_goal_pos
+        # if self.observe_cyl_pos
+        print("TODO")
 
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -111,6 +137,7 @@ class DeepPusherEnv(MainEnv):
         while data is None:
             try:
                 data = rospy.wait_for_message('/scan', LaserScan, timeout=5)
+                # if (self.reg_cyl is not None):
                 # TODO get cylinder to move towards to
             except:
                 pass
