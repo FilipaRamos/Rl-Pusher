@@ -10,6 +10,7 @@ from gym.utils import seeding
 from std_srvs.srv import Empty
 from sensor_msgs.msg import LaserScan
 
+from observer import Observer
 from navigator import Navigator
 from envs.mainEnv import MainEnv
 
@@ -22,12 +23,19 @@ class DeepPusherEnv(MainEnv):
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
         # Load configs
-        self.lidar = self.load_lidar_config()['lidar']
-        self.actions = self.load_actions_config()['actions']
-        rewards_cfg = self.load_rewards_config()['rewards']
+        sim_cfg = self.load_config("../config/sim.config")
+        self.sim = sim_cfg['sim']
+        self.obs = sim_cfg['obs']
+
+        self.lidar = self.load_config("../config/lidar.config")['lidar']
+        self.actions = self.load_config("../config/actions.config")['actions']
+
+        rewards_cfg = self.load_config("../config/rewards.config")['rewards']
         self.obs_idx_r, self.obs_idx_p, self.rewards, self.penalties = rewards_cfg['obs_index_r'], rewards_cfg['obs_index_p'], \
                                                                        rewards_cfg['rewards'], rewards_cfg['penalties']
 
+        # Class that handles robot observations
+        self.observer = Observer()
         # Class that handles all navigation
         self.navigator = Navigator()
 
@@ -36,21 +44,11 @@ class DeepPusherEnv(MainEnv):
         self.reward_range = (-np.inf, np.inf)
         self._seed()
 
-    def load_lidar_config(self, config="../config/lidar.config"):
+    def load_config(self, config):
         data = None
-        with open(config) as j_file:
-            data = json.load(j_file)        
+        with open(config) as file:
+            data = json.load(file)
         return data
-
-    def load_actions_config(self, config="../config/actions.config"):
-        with open(config) as j_file:
-            actions = json.load(j_file)
-        return actions
-
-    def load_rewards_config(self, config="../config/rewards.config"):
-        with open(config) as j_file:
-            rewards = json.load(j_file)
-        return rewards
 
     def robot_pos(self):
         return self.navigator.get_robot_pos()
@@ -70,10 +68,6 @@ class DeepPusherEnv(MainEnv):
         if pos.shape == (3,):
             pos = pos[:2]
         return np.sqrt(np.sum(np.square(pos - robot_pos[:2])))
-
-    def reg_bel_layout(self, layout_d):
-        assert 'target_cyl' in layout_d
-        self.layout = layout_d
 
     def discretize_observation(self, data, new_ranges):
         d_ranges = []
@@ -112,13 +106,7 @@ class DeepPusherEnv(MainEnv):
         except (rospy.ServiceException) as e:
             print("[LOG] /gazebo/unpause_physics service call failed")
 
-        self.new_cylinder_position = None
-        self.old_cylinder_position = None
-        moved_cylinder = False
-        moved_object = False
-
         if action == self.actions['none']:
-            moved_robot = False
             self.navigator.do_nothing()
         elif action == self.actions['push_forward']:
             self.navigator.push_forward(0.3)
@@ -150,15 +138,10 @@ class DeepPusherEnv(MainEnv):
 
         state, done = self.discretize_observation(data, 5)
 
+        # if self.at_goal():
+
         if not done:
-            # TODO: check where we are, at goal, pushing, moving, etc...
-            position, orientation = self.robot_pos()
-            if action == 0:
-                reward = 5
-            else:
-                reward = 1
-        else:
-            reward = -200
+            reward = self.reward()
 
         return state, reward, done, {}
 
@@ -194,3 +177,18 @@ class DeepPusherEnv(MainEnv):
 
         state = self.discretize_observation(data, 5)
         return state
+
+    def reward(self):
+        reward = 0.0
+
+        dist_goal = self.dist_goal()
+        dist_cyl = self.observer.cyl.dist_to()
+        
+        '''gate_dist_box_reward = (self.last_dist_box > self.box_null_dist * self.box_size)
+        reward += (self.last_dist_box - dist_box) * self.reward_box_dist * gate_dist_box_reward
+        self.last_dist_box = dist_box
+        
+        dist_box_goal = self.dist_box_goal()
+        reward += (self.last_box_goal - dist_box_goal) * self.reward_box_goal
+        self.last_box_goal = dist_box_g
+'''

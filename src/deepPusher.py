@@ -16,9 +16,7 @@ class DeepPusher():
         @param objectDetector - class that provides the cylinder detection
         @param state - variable that describes the behaviour that the robot must take
     '''
-    def __init__(self, observer):
-        self.ob = observer
-        
+    def __init__(self):
         self.state = 0
         self.frequency = 10
 
@@ -107,9 +105,7 @@ class DeepPusher():
         self.env.close()
 
 if __name__ == '__main__':
-    from observer import Observer
-    ob = Observer()
-    dp = DeepPusher(ob)
+    dp = DeepPusher()
     dp.setup()
     dp.cycle()
     print("[ LOG] Reached the end... Closing!")
