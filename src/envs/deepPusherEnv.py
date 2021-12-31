@@ -9,6 +9,7 @@ from gym.utils import seeding
 
 from std_srvs.srv import Empty
 from sensor_msgs.msg import LaserScan
+from gazebo_msgs import ModelStates
 
 from observer import Observer
 from navigator import Navigator
@@ -24,7 +25,7 @@ class DeepPusherEnv(MainEnv):
 
         # Load configs
         sim_cfg = self.load_config("../config/sim.config")
-        self.sim = sim_cfg['sim']
+        self.sim = sim_cfg['sim']['world']
         self.obs = sim_cfg['obs']
 
         self.lidar = self.load_config("../config/lidar.config")['lidar']
@@ -90,10 +91,16 @@ class DeepPusherEnv(MainEnv):
         return d_ranges, done
 
     def observe(self):
+        ''' Try to observe target cylinder position '''
+        obs = None
+        while obs is None:
+            try:
+                obs = rospy.wait_for_message('/gazebo_msgs/model_states', ModelStates, timeout=5)
+            except:
+                pass
+        idx = obs.name.index(self.sim['target_cyl']['id'])
+        pose = obs.pose[idx]
         # TODO
-        # if self.observe_goal_pos
-        # if self.observe_cyl_pos
-        print("TODO")
 
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
@@ -181,6 +188,7 @@ class DeepPusherEnv(MainEnv):
     def reward(self):
         reward = 0.0
 
+        # TODO: how to calculate cyl dist to goal?
         dist_goal = self.dist_goal()
         dist_cyl = self.observer.cyl.dist_to()
         

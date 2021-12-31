@@ -31,7 +31,7 @@ class Observer():
             return self.cyl.get_layout_dict()
             
     def register_cylinder(self):
-        points, cluster_size = self.det.find_cylinder(plot=True)
+        points, cluster_size = self.ut.find_cylinder(plot=True)
         if points.size > 3:
             # TODO: nr img points?
             if points.size >= cluster_size - 1:
