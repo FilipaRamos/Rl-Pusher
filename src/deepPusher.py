@@ -13,7 +13,7 @@ from envs import deepPusherEnv
 class DeepPusher():
     '''
         DeepPusher class
-        @param objectDetector - class that provides the cylinder detection
+        @param objectDetector - class that provides the cylinder detectionstep
         @param state - variable that describes the behaviour that the robot must take
     '''
     def __init__(self):
@@ -50,7 +50,6 @@ class DeepPusher():
     def cycle(self):
         print("[ LOG] Initiating cycle!")
         for x in range(self.total_episodes):
-            done = False
             cumulated_reward = 0
             observation = self.env.reset()
 

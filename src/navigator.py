@@ -1,22 +1,12 @@
 #!/usr/bin/env python3
 import rospy
 
-from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
 
 class Navigator():
     def __init__(self):
         self.msg = Twist()
         self.mov_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
-        self.odom_sub = rospy.Subscriber("/odom", Odometry, self.odom_callback, queue_size=1)
-
-    def odom_callback(self, msg):
-        ''' Get the current position and orientation of the robot'''
-        self.position = msg.pose.pose.position
-        self.orientation = msg.pose.pose.orientation
-
-    def get_navigator_pos(self):
-        return self.position, self.orientation
 
     '''
         Actuator messages for action performance
