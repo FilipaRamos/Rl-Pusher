@@ -13,7 +13,7 @@ class MainEnv(gym.Env):
     '''My Main Custom Env class following gym interface'''
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, launch_file):
+    def __init__(self, pkg_path, launch_file):
         self.last_clock_msg = Clock()
 
         # Set port variables
@@ -25,7 +25,8 @@ class MainEnv(gym.Env):
         os.environ["GAZEBO_MASTER_URI"] = "http://localhost:" + self.port_gazebo
 
         ros_path = os.path.dirname(subprocess.check_output(["which", "roscore"]))
-        path = os.path.join('../launch/', launch_file)
+        path_launch = os.path.join(pkg_path, 'launch')
+        path = os.path.join(path_launch, launch_file)
         if not os.path.exists(path):
             raise IOError("File " + path + " does not exist")
 

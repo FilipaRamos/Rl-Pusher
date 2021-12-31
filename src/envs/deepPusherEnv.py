@@ -2,6 +2,7 @@
 import gym
 import json
 import rospy
+import rospkg
 import numpy as np
 
 from gym import utils, spaces
@@ -9,8 +10,7 @@ from gym.utils import seeding
 
 from std_srvs.srv import Empty
 from nav_msgs.msg import Odometry
-from gazebo_msgs import ModelStates
-from sensor_msgs.msg import LaserScan
+from gazebo_msgs.msg import ModelState
 
 from observer import Observer
 from navigator import Navigator
@@ -18,26 +18,30 @@ from envs.mainEnv import MainEnv
 
 class DeepPusherEnv(MainEnv):
     def __init__(self):
-        MainEnv.__init__(self, "deepPusher-v0.launch")
+        # Get ros package path
+        ros_ = rospkg.RosPack()
+        ros_path = ros_.get_path('deep-rl-pusher')
+        MainEnv.__init__(self, ros_path, "deepPusher-v0.launch")
 
         self.unpause = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
         self.reset_proxy = rospy.ServiceProxy('/gazebo/reset_simulation', Empty)
 
         # Load configs
-        sim_cfg = self.load_config("../config/sim.config")
+        sim_cfg = self.load_config(ros_path + "/config/sim.config")
         self.sim = sim_cfg['sim']['world']
         self.obs = sim_cfg['obs']
 
-        self.lidar = self.load_config("../config/lidar.config")['lidar']
-        self.actions = self.load_config("../config/actions.config")['actions']
+        self.lidar = self.load_config(ros_path + "/config/lidar.config")['lidar']
+        self.actions = self.load_config(ros_path + "/config/actions.config")['actions']
 
-        rewards_cfg = self.load_config("../config/rewards.config")['rewards']
+        rewards_cfg = self.load_config(ros_path + "/config/rewards.config")['rewards']
         self.obs_idx_r, self.obs_idx_p, self.rewards, self.penalties = rewards_cfg['obs_index_r'], rewards_cfg['obs_index_p'], \
                                                                        rewards_cfg['rewards'], rewards_cfg['penalties']
 
         # Class that handles robot observations
         self.observer = Observer()
+        self.observer.observe()
         # Class that handles all navigation
         self.navigator = Navigator()
 
@@ -47,7 +51,7 @@ class DeepPusherEnv(MainEnv):
         
         # Parametrise the steps of the simulation so that we can penalise long solutions
         self.steps = 0
-        self.max_steps = sim_cfg['max_steps']
+        self.max_steps = sim_cfg['sim']['max_steps']
         self._seed()
 
         # Calculate initial distances
@@ -124,7 +128,7 @@ class DeepPusherEnv(MainEnv):
             obs = None
             while obs is None:
                 try:
-                    obs = rospy.wait_for_message('/gazebo_msgs/model_states', ModelStates, timeout=5)
+                    obs = rospy.wait_for_message('/gazebo_msgs/model_states', ModelState, timeout=5)
                 except:
                     pass
             idx_target_cyl = obs.name.index(self.sim['target_cyl']['id'])
@@ -246,7 +250,7 @@ class DeepPusherEnv(MainEnv):
             print("[LOG] /gazebo/unpause_physics service call failed")
 
         # Force new cylinder registration
-        self.observer.register_cylinder(force_ob_cyl = True)
+        self.observer.observe()(force_ob_cyl=True)
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
