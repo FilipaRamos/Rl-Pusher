@@ -250,7 +250,7 @@ class DeepPusherEnv(MainEnv):
             print("[LOG] /gazebo/unpause_physics service call failed")
 
         # Force new cylinder registration
-        self.observer.observe()(force_ob_cyl=True)
+        self.observer.observe(force_ob_cyl=True)
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:

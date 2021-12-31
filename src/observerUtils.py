@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import math
 import rospy
+import rospkg
 import numpy as np
 
 from sklearn import cluster
@@ -38,6 +39,10 @@ class Utils():
 
         self.precision = 0.01
         self.places = 2
+
+        # Get ros package path
+        ros_ = rospkg.RosPack()
+        self.ros_path = ros_.get_path('deep-rl-pusher')
 
     def laser_callback(self, msg):
         self.x, self.y = self.generate_pc(msg.ranges, msg.range_min, msg.range_max, msg.angle_increment)
@@ -143,6 +148,8 @@ class Utils():
         return cluster.labels_
 
     def find_cylinder(self, plot=False):
+        if not self.x and not self.y and not self.clusters:
+            raise Exception('find_cylinder', 'no data collected yet')
         x, y, clusters = self.exclude_walls(self.x, self.y, self.clusters)
         image, img_pc_coords = self.transform_to_img(x, y, clusters)
         
@@ -205,7 +212,7 @@ class Utils():
         ax.set_ylabel('y')
         ax.scatter(x, y, s=.3, c=clusters)
 
-        fig.savefig('../resources/clusters.png')
+        fig.savefig(self.ros_path + '/resources/clusters.png')
         plt.close(fig)
 
     def plot_hough_linear(self, image, theta, h, d):
@@ -242,7 +249,7 @@ class Utils():
             ax[2].axline((x0, y0), slope=np.tan(angle + np.pi/2))
 
         plt.tight_layout()
-        fig.savefig('../resources/lines.png')
+        fig.savefig(self.ros_path + '/resources/lines.png')
         plt.close(fig)
 
     def plot_hough_circle(self, image, cx, cy, radii):
@@ -259,7 +266,7 @@ class Utils():
         ax.set_title('Circle Hough')
         ax.imshow(image, cmap=plt.cm.gray)
         plt.tight_layout()
-        fig.savefig('../resources/circles.png')
+        fig.savefig(self.ros_path + '/resources/circles.png')
         plt.close(fig)
 
     def plot_pc_img(self, image):
@@ -268,5 +275,5 @@ class Utils():
         fig, ax = plt.subplots(ncols=1, nrows=1, figsize=(10, 4))
         ax.imshow(image)
         plt.tight_layout()
-        fig.savefig('../resources/pc_image.png')
+        fig.savefig(self.ros_path + '/resources/pc_image.png')
         plt.close(fig)

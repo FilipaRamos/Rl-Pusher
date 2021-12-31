@@ -31,7 +31,10 @@ class Observer():
             return self.cyl.get_layout_dict()
             
     def register_cylinder(self):
-        points, cluster_size = self.ut.find_cylinder(plot=True)
+        try:
+            points, cluster_size = self.ut.find_cylinder(plot=True)
+        except Exception as e:
+                print("[ EXCEPTION ] Raising " + type(e) + " due to " + e.args)
         if points.size > 3:
             # TODO: nr img points?
             if points.size >= cluster_size - 1:
