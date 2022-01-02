@@ -139,8 +139,6 @@ class DeepPusherEnv(MainEnv):
         return d_ranges, done
 
     def check_pose_stuck(self, obs_pose):
-        print("------ CHECK POSE STUCK: ", round(obs_pose[0], 4), round(obs_pose[1], 4), round(obs_pose[2], 4))
-        print("------ AND: ", round(self.previous_robot_pose[0], 4), round(self.previous_robot_pose[1], 4), round(self.previous_robot_pose[2], 4))
         if round(obs_pose[0], 4) == round(self.previous_robot_pose[0], 4) \
             and round(obs_pose[1], 4) == round(self.previous_robot_pose[1], 4) \
             and round(obs_pose[2], 4) == round(self.previous_robot_pose[2], 4):
@@ -205,7 +203,7 @@ class DeepPusherEnv(MainEnv):
         self.last_goal_dist = dist_goal       
 
         # Dist to cyl reward
-        reward_cyl_flag = (self.last_cyl_dist > self.sim['target_cyl']['radius'] + 0.001)
+        reward_cyl_flag = (self.last_cyl_dist > self.sim['target_cyl']['radius'] + 0.01)
         reward += (self.last_cyl_dist - dist_cyl) * self.rewards[self.obs_idx_r['at_target_cyl']] * reward_cyl_flag
         self.last_cyl_dist = dist_cyl
 
@@ -214,6 +212,9 @@ class DeepPusherEnv(MainEnv):
 
         # Penalise for time step
         reward -= self.penalties[self.obs_idx_p['step']]
+        
+        # Rewards are on a too small scale
+        reward = reward*4
         
         # Clip
         #in_range = reward < self.reward_clip and reward > -self.reward_clip
@@ -243,15 +244,15 @@ class DeepPusherEnv(MainEnv):
         #elif action == self.actions['push_right']:
         #    self.navigator.push_right()
         elif action == self.actions['move_forward']:
-            self.navigator.move_forward(0.2)
+            self.navigator.move_forward(0.35)
         elif action == self.actions['move_left']:
-            self.navigator.move_left(0.2)
+            self.navigator.move_left(0.35)
         elif action == self.actions['move_right']:
-            self.navigator.move_right(0.2)
+            self.navigator.move_right(0.35)
 
         # Observe before pausing since our observations depend on Gazebo clock being published
         state = self.observe()
-        
+
         if self.steps > 0:
             if self.check_pose_stuck(state[2]):
                 self.robot_stuck += 1

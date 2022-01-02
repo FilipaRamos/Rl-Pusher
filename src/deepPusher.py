@@ -42,7 +42,7 @@ class DeepPusher():
         self.epsilon_discount = 0.9986
 
         self.start_time = time.time()
-        self.total_episodes = 150
+        self.total_episodes = 1500
 
         self.highest_reward = 0
         print("[ LOG] deepPusher setup done!")
@@ -61,15 +61,12 @@ class DeepPusher():
             state = ''.join(map(str, observation))
 
             steps = 0
-            print("------ X = ", x)
             while True:
                 # Pick action based on current state
                 action = self.qlearn.chooseAction(state)
 
                 # Execute action and receive the reward
                 observation, reward, done, info = self.env.step(action)
-                print("REWARD --------- = ", reward)
-                print("AND DONE? --------- = ", done)
                 cumulated_reward += reward
 
                 if self.highest_reward < cumulated_reward:
