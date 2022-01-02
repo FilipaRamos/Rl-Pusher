@@ -42,11 +42,11 @@ class Navigator():
     def move_left(self, vel):
         self.clean_msg()
         self.msg.linear.x = vel / 6
-        self.msg.linear.z = vel
+        self.msg.angular.z = vel
         self.mov_pub.publish(self.msg)
 
     def move_right(self, vel):
         self.clean_msg()
         self.msg.linear.x = vel / 6
-        self.msg.linear.z = -vel
+        self.msg.angular.z = -vel
         self.mov_pub.publish(self.msg)

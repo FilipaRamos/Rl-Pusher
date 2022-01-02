@@ -10,7 +10,7 @@ from gym.utils import seeding
 
 from std_srvs.srv import Empty
 from nav_msgs.msg import Odometry
-from gazebo_msgs.msg import ModelState
+from gazebo_msgs.msg import ModelStates, LinkStates
 
 from observer import Observer
 from navigator import Navigator
@@ -58,6 +58,10 @@ class DeepPusherEnv(MainEnv):
         self.last_cyl_dist = self.dist_init(cyl=True)
         self.last_goal_dist = self.dist_init(cyl=False)
 
+        # Terminate early if the robot is stuck
+        self.robot_stuck = 0
+        self.previous_robot_pose = [0, 0, 0]
+
     def load_config(self, config):
         data = None
         with open(config) as file:
@@ -76,7 +80,7 @@ class DeepPusherEnv(MainEnv):
 
     def at_goal(self, state):
         # Unpack state
-        p_target_cyl, p_goal, _ = state
+        p_target_cyl, p_goal, _, _ = state
         # To be at the goal, the distance between the goal and the target cylinder must be < than the goal's radius
         r = self.sim['goal']['radius']
         dist = self.dist_xy(p_target_cyl, p_goal)
@@ -86,11 +90,11 @@ class DeepPusherEnv(MainEnv):
 
     def dist_goal(self, state):
         ''' Calculates distance from target cylinder to goal '''
-        p_target_cyl, p_goal, _ = state
+        p_target_cyl, p_goal, _, _ = state
         return self.dist_xy(p_target_cyl, p_goal)
 
     def dist_cyl(self, state):
-        p_target_cyl, _, p_robot = state
+        p_target_cyl, _, p_robot, _ = state
         return self.dist_xy(p_robot, p_target_cyl)
 
     def dist_xy(self, pose1, pose2):
@@ -100,6 +104,19 @@ class DeepPusherEnv(MainEnv):
             pose1 = pose1[:2]
             pose2 = pose2[:2]
         return np.sqrt(np.sum(np.square(pose1 - pose2)))
+
+    def pose_to_array(self, pose):
+        pose_ = [pose.position.x, pose.position.y, pose.position.z]
+        return np.asarray(pose_)
+
+    def quat_to_array(self, pose):
+        pose_ = [pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z]
+        return np.asarray(pose_)
+        
+    def ori_align(self, quat):
+        ''' From quaternion, extract z_{ground} dot z_{body} '''
+        a, b, c, d = quat
+        return a**2 - b**2 - c**2 + d**2
 
     def discretize_observation(self, data, new_ranges):
         d_ranges = []
@@ -121,6 +138,15 @@ class DeepPusherEnv(MainEnv):
 
         return d_ranges, done
 
+    def check_pose_stuck(self, obs_pose):
+        print("------ CHECK POSE STUCK: ", round(obs_pose[0], 4), round(obs_pose[1], 4), round(obs_pose[2], 4))
+        print("------ AND: ", round(self.previous_robot_pose[0], 4), round(self.previous_robot_pose[1], 4), round(self.previous_robot_pose[2], 4))
+        if round(obs_pose[0], 4) == round(self.previous_robot_pose[0], 4) \
+            and round(obs_pose[1], 4) == round(self.previous_robot_pose[1], 4) \
+            and round(obs_pose[2], 4) == round(self.previous_robot_pose[2], 4):
+            return True
+        return False
+
     def observe(self):
         ''' Model states can only be observed if we specify it in configuration '''
         if self.obs['target_cyl'] and self.obs['goal']:
@@ -128,20 +154,23 @@ class DeepPusherEnv(MainEnv):
             obs = None
             while obs is None:
                 try:
-                    obs = rospy.wait_for_message('/gazebo_msgs/model_states', ModelState, timeout=5)
+                    obs = rospy.wait_for_message('/gazebo/model_states', ModelStates, timeout=5)
+                    if self.sim['robot']['id'] not in obs.name:
+                        obs = None
                 except:
                     pass
             idx_target_cyl = obs.name.index(self.sim['target_cyl']['id'])
-            pose_target_cyl = obs.pose[idx_target_cyl]
+            pose_target_cyl = self.pose_to_array(obs.pose[idx_target_cyl])
 
             idx_goal = obs.name.index(self.sim['goal']['id'])
-            pose_goal = obs.pose[idx_goal]
+            pose_goal = self.pose_to_array(obs.pose[idx_goal])
 
             if self.obs['robot']:
                 idx_robot = obs.name.index(self.sim['robot']['id'])
-                pose_robot = obs.pose[idx_robot]
+                pose_robot = self.pose_to_array(obs.pose[idx_robot])
+                ori_robot = self.quat_to_array(obs.pose[idx_robot])
                 
-                return (pose_target_cyl, pose_goal, pose_robot)
+                return (pose_target_cyl, pose_goal, pose_robot, ori_robot)
         else:
             #TODO
             print('Not supported yet.')
@@ -155,10 +184,10 @@ class DeepPusherEnv(MainEnv):
                     odom = rospy.wait_for_message('/odom', Odometry, timeout=5)
                 except:
                     pass
-            pose_robot = odom.pose.pose.position
-            ori_robot = odom.pose.pose.orientation
+            pose_robot = self.pose_to_array(odom.pose.pose)
+            ori_robot = self.quat_to_array(odom.pose.pose)
             
-            return (pose_target_cyl, pose_goal, pose_robot)
+            return (pose_target_cyl, pose_goal, pose_robot, ori_robot)
 
     def reward(self, state):
         reward = 0.0
@@ -180,8 +209,17 @@ class DeepPusherEnv(MainEnv):
         reward += (self.last_cyl_dist - dist_cyl) * self.rewards[self.obs_idx_r['at_target_cyl']] * reward_cyl_flag
         self.last_cyl_dist = dist_cyl
 
+        # Orientation reward
+        reward += 0.01 * self.ori_align(state[-1])
+
         # Penalise for time step
-        reward -= self.penalties[self.obs_index_p['step']]
+        reward -= self.penalties[self.obs_idx_p['step']]
+        
+        # Clip
+        #in_range = reward < self.reward_clip and reward > -self.reward_clip
+        #if not(in_range):
+        #    reward = np.clip(reward, -self.reward_clip, self.reward_clip)
+        #    print('Warning: reward was outside of range!')
 
         return reward
 
@@ -198,18 +236,28 @@ class DeepPusherEnv(MainEnv):
 
         if action == self.actions['none']:
             self.navigator.do_nothing()
-        elif action == self.actions['push_forward']:
-            self.navigator.push_forward(0.3)
-        elif action == self.actions['push_left']:
-            self.navigator.push_left(0.3)
-        elif action == self.actions['push_right']:
-            self.navigator.push_right(0.3)
+        #elif action == self.actions['push_forward']:
+        #    self.navigator.push_forward()
+        #elif action == self.actions['push_left']:
+        #    self.navigator.push_left()
+        #elif action == self.actions['push_right']:
+        #    self.navigator.push_right()
         elif action == self.actions['move_forward']:
-            self.navigator.move_forward(0.3)
+            self.navigator.move_forward(0.2)
         elif action == self.actions['move_left']:
-            self.navigator.move_left(0.3)
+            self.navigator.move_left(0.2)
         elif action == self.actions['move_right']:
-            self.navigator.move_right(0.3)
+            self.navigator.move_right(0.2)
+
+        # Observe before pausing since our observations depend on Gazebo clock being published
+        state = self.observe()
+        
+        if self.steps > 0:
+            if self.check_pose_stuck(state[2]):
+                self.robot_stuck += 1
+            else:
+                self.robot_stuck = 0
+        self.previous_robot_pose = state[2]
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
@@ -217,19 +265,23 @@ class DeepPusherEnv(MainEnv):
         except (rospy.ServiceException) as e:
             print("[LOG] /gazebo/pause_physics service call failed")
 
-        state = self.observe()
         #state, done = self.discretize_observation(data, 5)
 
         done = False
         reward = self.reward(state)
-        if self.observer.cyl.current_pos != [0, 0, 0]:
-            if self.at_goal(state):
-                reward += self.rewards[self.obs_idx_r['at_goal']]
-                done = True
+        #if self.observer.cyl.current_pos[0] != 0 and self.observer.cyl.current_pos[1] != 0 and self.observer.cyl.current_pos[2] != 0:
+        if self.at_goal(state):
+            reward += self.rewards[self.obs_idx_r['at_goal']]
+            done = True
+        if self.robot_stuck > 6:
+            done = True
+            self.robot_stuck = 0
+            print("ROBOT STUCK...")
 
         self.steps += 1
-        if self.steps > self.max_steps:
+        if self.steps == self.max_steps:
             done = True
+            print("We are so done...")
         
         #return state, reward, done, {}
         return state, reward, done, self.observer.cyl.get_layout_dict()
@@ -249,8 +301,12 @@ class DeepPusherEnv(MainEnv):
         except(rospy.ServiceException) as e:
             print("[LOG] /gazebo/unpause_physics service call failed")
 
-        # Force new cylinder registration
-        self.observer.observe(force_ob_cyl=True)
+        if self.steps != 0:
+            # Force new cylinder registration
+            self.observer.observe(force_ob_cyl=True)
+
+        # Observe before pausing since our observations depend on Gazebo clock being published
+        state = self.observe()
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
@@ -259,5 +315,4 @@ class DeepPusherEnv(MainEnv):
             print("[LOG] /gazebo/pause_physics service call failed")
 
         #state = self.discretize_observation(data, 5)
-        state = self.observe()
         return state

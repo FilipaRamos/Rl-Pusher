@@ -42,7 +42,7 @@ class DeepPusher():
         self.epsilon_discount = 0.9986
 
         self.start_time = time.time()
-        self.total_episodes = 10000
+        self.total_episodes = 150
 
         self.highest_reward = 0
         print("[ LOG] deepPusher setup done!")
@@ -51,6 +51,7 @@ class DeepPusher():
         print("[ LOG] Initiating cycle!")
         for x in range(self.total_episodes):
             cumulated_reward = 0
+
             observation = self.env.reset()
 
             if self.qlearn.epsilon > 0.05:
@@ -59,12 +60,16 @@ class DeepPusher():
             self.render(x)
             state = ''.join(map(str, observation))
 
-            for i in range(1500):
+            steps = 0
+            print("------ X = ", x)
+            while True:
                 # Pick action based on current state
                 action = self.qlearn.chooseAction(state)
 
                 # Execute action and receive the reward
                 observation, reward, done, info = self.env.step(action)
+                print("REWARD --------- = ", reward)
+                print("AND DONE? --------- = ", done)
                 cumulated_reward += reward
 
                 if self.highest_reward < cumulated_reward:
@@ -74,11 +79,12 @@ class DeepPusher():
                 self.qlearn.learn(state, nextState, action, reward)
 
                 self.env._flush(force=True)
+                steps += 1
 
                 if not(done):
                     state = nextState
                 else:
-                    self.last_time_steps = np.append(self.last_time_steps, [int(i + 1)])
+                    self.last_time_steps = np.append(self.last_time_steps, [int(steps + 1)])
                     break
 
             if x % 100 == 0:

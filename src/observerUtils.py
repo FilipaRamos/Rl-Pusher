@@ -47,7 +47,7 @@ class Utils():
     def laser_callback(self, msg):
         self.x, self.y = self.generate_pc(msg.ranges, msg.range_min, msg.range_max, msg.angle_increment)
         self.clusters = self.segment_pc(self.x, self.y, msg.range_min)
-        self.plot_clusters(self.x, self.y, self.clusters)
+        #self.plot_clusters(self.x, self.y, self.clusters)
 
     def generate_pc(self, ranges, range_min, range_max, angle_increment):
         ranges = np.array(ranges)

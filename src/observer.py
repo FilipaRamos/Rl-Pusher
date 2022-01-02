@@ -22,7 +22,7 @@ class Observer():
                 self.register_cylinder()
                 self.register = False
             except Exception as e:
-                print("[ EXCEPTION ] Raising " + type(e) + " due to " + e.args)
+                print("[ EXCEPTION ] Raising {} due to {}".format(type(e), e.args))
                 return self.observe()
         elif force_ob_cyl:
             self.register = True
@@ -34,7 +34,7 @@ class Observer():
         try:
             points, cluster_size = self.ut.find_cylinder(plot=True)
         except Exception as e:
-                print("[ EXCEPTION ] Raising " + type(e) + " due to " + e.args)
+                print("[ EXCEPTION ] Raising {} due to {}".format(type(e), e.args))
         if points.size > 3:
             # TODO: nr img points?
             if points.size >= cluster_size - 1:

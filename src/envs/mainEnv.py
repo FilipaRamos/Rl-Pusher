@@ -35,6 +35,11 @@ class MainEnv(gym.Env):
 
         self.gazeboc_pid = 0
         rospy.init_node('gym', anonymous=True)
+        self.launch_client()
+
+    def launch_client(self):
+        cmd = 'export GAZEBO_MASTER_URI=http://localhost:' + self.port_gazebo + ' && gzclient'
+        subprocess.Popen([cmd], stdout=subprocess.PIPE, shell=True)
 
     def _render(self, mode="human", close=False):
 
