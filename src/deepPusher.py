@@ -42,7 +42,7 @@ class DeepPusher():
         self.epsilon_discount = 0.9986
 
         self.start_time = time.time()
-        self.total_episodes = 1500
+        self.total_episodes = 15000
 
         self.highest_reward = 0
         print("[ LOG] deepPusher setup done!")

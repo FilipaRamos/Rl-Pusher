@@ -10,6 +10,7 @@ from gym.utils import seeding
 
 from std_srvs.srv import Empty
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import LaserScan
 from gazebo_msgs.msg import ModelStates, LinkStates
 
 from observer import Observer
@@ -36,8 +37,8 @@ class DeepPusherEnv(MainEnv):
         self.actions = self.load_config(ros_path + "/config/actions.config")['actions']
 
         rewards_cfg = self.load_config(ros_path + "/config/rewards.config")['rewards']
-        self.obs_idx_r, self.obs_idx_p, self.rewards, self.penalties = rewards_cfg['obs_index_r'], rewards_cfg['obs_index_p'], \
-                                                                       rewards_cfg['rewards'], rewards_cfg['penalties']
+        self.obs_idx_r, self.obs_idx_p, self.rewards, self.penalties, self.r_scale_factor = rewards_cfg['obs_index_r'], rewards_cfg['obs_index_p'], \
+                                                                       rewards_cfg['rewards'], rewards_cfg['penalties'], rewards_cfg['scale_factor']
 
         # Class that handles robot observations
         self.observer = Observer()
@@ -80,7 +81,7 @@ class DeepPusherEnv(MainEnv):
 
     def at_goal(self, state):
         # Unpack state
-        p_target_cyl, p_goal, _, _ = state
+        _, p_target_cyl, p_goal, _, _ = state
         # To be at the goal, the distance between the goal and the target cylinder must be < than the goal's radius
         r = self.sim['goal']['radius']
         dist = self.dist_xy(p_target_cyl, p_goal)
@@ -90,11 +91,11 @@ class DeepPusherEnv(MainEnv):
 
     def dist_goal(self, state):
         ''' Calculates distance from target cylinder to goal '''
-        p_target_cyl, p_goal, _, _ = state
+        _, p_target_cyl, p_goal, _, _ = state
         return self.dist_xy(p_target_cyl, p_goal)
 
     def dist_cyl(self, state):
-        p_target_cyl, _, p_robot, _ = state
+        _, p_target_cyl, _, p_robot, _ = state
         return self.dist_xy(p_robot, p_target_cyl)
 
     def dist_xy(self, pose1, pose2):
@@ -113,15 +114,19 @@ class DeepPusherEnv(MainEnv):
         pose_ = [pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z]
         return np.asarray(pose_)
         
-    def ori_align(self, quat):
-        ''' From quaternion, extract z_{ground} dot z_{body} '''
-        a, b, c, d = quat
-        return a**2 - b**2 - c**2 + d**2
+    def ori_align(self, pair):
+        # Is this correct?
+        import math
+        import transforms3d as td3
+        pos_g, pos_r = pair
 
-    def discretize_observation(self, data, new_ranges):
+        ori_diff = math.atan2(pos_r[2] - pos_g[2], pos_r[0] - pos_g[0])
+        print("=-------------- Alignment = ", ori_diff)
+
+        return abs(ori_diff)
+
+    def observe_lidar(self, data, new_ranges):
         d_ranges = []
-        t_range = 0.2
-        done = False
         mod = len(data.ranges) / new_ranges
 
         for i, item in enumerate(data.ranges):
@@ -133,10 +138,7 @@ class DeepPusherEnv(MainEnv):
                 else:
                     d_ranges.append(int(data.ranges[i]))
 
-            if (t_range > data.ranges[i] > 0):
-                done = True
-
-        return d_ranges, done
+        return d_ranges
 
     def check_pose_stuck(self, obs_pose):
         if round(obs_pose[0], 4) == round(self.previous_robot_pose[0], 4) \
@@ -146,15 +148,21 @@ class DeepPusherEnv(MainEnv):
         return False
 
     def observe(self):
+        ''' Observe pointcloud '''
+        data = None
+        while data is None:
+            try:
+                data = rospy.wait_for_message('/scan', LaserScan, timeout=5)
+            except:
+                pass
+        pc = self.observe_lidar(data, 6)
         ''' Model states can only be observed if we specify it in configuration '''
         if self.obs['target_cyl'] and self.obs['goal']:
             ''' Try to obtain model states from Gazebo '''
             obs = None
-            while obs is None:
+            while obs is None or self.sim['robot']['id'] not in obs.name:
                 try:
                     obs = rospy.wait_for_message('/gazebo/model_states', ModelStates, timeout=5)
-                    if self.sim['robot']['id'] not in obs.name:
-                        obs = None
                 except:
                     pass
             idx_target_cyl = obs.name.index(self.sim['target_cyl']['id'])
@@ -168,7 +176,7 @@ class DeepPusherEnv(MainEnv):
                 pose_robot = self.pose_to_array(obs.pose[idx_robot])
                 ori_robot = self.quat_to_array(obs.pose[idx_robot])
                 
-                return (pose_target_cyl, pose_goal, pose_robot, ori_robot)
+                return (pc, pose_target_cyl, pose_goal, pose_robot, ori_robot)
         else:
             #TODO
             print('Not supported yet.')
@@ -185,7 +193,7 @@ class DeepPusherEnv(MainEnv):
             pose_robot = self.pose_to_array(odom.pose.pose)
             ori_robot = self.quat_to_array(odom.pose.pose)
             
-            return (pose_target_cyl, pose_goal, pose_robot, ori_robot)
+            return (pc, pose_target_cyl, pose_goal, pose_robot, ori_robot)
 
     def reward(self, state):
         reward = 0.0
@@ -208,13 +216,14 @@ class DeepPusherEnv(MainEnv):
         self.last_cyl_dist = dist_cyl
 
         # Orientation reward
-        reward += 0.01 * self.ori_align(state[-1])
+        #ori = (state[2] if (dist_cyl < 0.2) else state[1], state[3])
+        #reward -= 1.2 * self.ori_align(ori)
 
         # Penalise for time step
         reward -= self.penalties[self.obs_idx_p['step']]
         
         # Rewards are on a too small scale
-        reward = reward*4
+        reward = reward*self.r_scale_factor
         
         # Clip
         #in_range = reward < self.reward_clip and reward > -self.reward_clip
@@ -246,19 +255,19 @@ class DeepPusherEnv(MainEnv):
         elif action == self.actions['move_forward']:
             self.navigator.move_forward(0.35)
         elif action == self.actions['move_left']:
-            self.navigator.move_left(0.35)
+            self.navigator.move_left(0.15)
         elif action == self.actions['move_right']:
-            self.navigator.move_right(0.35)
+            self.navigator.move_right(0.15)
 
         # Observe before pausing since our observations depend on Gazebo clock being published
         state = self.observe()
 
         if self.steps > 0:
-            if self.check_pose_stuck(state[2]):
+            if self.check_pose_stuck(state[3]):
                 self.robot_stuck += 1
             else:
                 self.robot_stuck = 0
-        self.previous_robot_pose = state[2]
+        self.previous_robot_pose = state[3]
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
@@ -302,9 +311,8 @@ class DeepPusherEnv(MainEnv):
         except(rospy.ServiceException) as e:
             print("[LOG] /gazebo/unpause_physics service call failed")
 
-        if self.steps != 0:
-            # Force new cylinder registration
-            self.observer.observe(force_ob_cyl=True)
+        # Force new cylinder registration
+        self.observer.observe(force_ob_cyl=True)
 
         # Observe before pausing since our observations depend on Gazebo clock being published
         state = self.observe()

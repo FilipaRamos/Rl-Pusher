@@ -11,7 +11,7 @@
   <arg name="yaw" default="0.0"/>  
   
   <!-- The default world to launch -->
-  <arg name="world" default="general"/>
+  <arg name="world" default="simple"/>
 
   <env name="GAZEBO_MODEL_PATH" value="$(find deep-rl-pusher)/models"/>
   <include file="$(find deep-rl-pusher)/launch/cfg-gazebo.launch">
