@@ -126,7 +126,6 @@ class DeepPusherEnv(MainEnv):
         # Check slopes between robot(x1, y1) - cyl(x2, y2) / cyl - goal(x3, y3) are close, if they are, robot is aligned with both which is what we want
         # ((y1 - y2) * (x1 - x3) - (y1 - y3) * (x1 - x2)) <= 1e-9
         ori_diff = ((pos_r[1] - pos_c[1]) * (pos_r[0] - pos_g[0]) - (pos_r[1] - pos_g[1]) * (pos_r[0] - pos_c[0]))
-        print("---------- ALIGNMENT = ", abs(ori_diff))
         return abs(ori_diff)
 
     def transform_coordinates(self, length, height, x_coord, y_coord):
@@ -146,13 +145,15 @@ class DeepPusherEnv(MainEnv):
         return x_img_coord, y_img_coord
 
     def fill_obs(self, image, x, y, radius):
+        radius = int(radius)
         i_x_b = (x - radius) if (x -radius) in range(0, image.shape[0] + 1) else 0
         i_x_a = (x + radius +1) if (x + radius + 1) in range(0, image.shape[0] + 1) else image.shape[0]
-        i_y_b = (y - radius) if (y -radius) in range(0, image.shape[0] + 1) else 0
-        i_y_a = (y + radius +1) if (y + radius + 1) in range(0, image.shape[0] + 1) else image.shape[0]
+        i_y_b = (y - radius) if (y -radius) in range(0, image.shape[1] + 1) else 0
+        i_y_a = (y + radius +1) if (y + radius + 1) in range(0, image.shape[1] + 1) else image.shape[1]
         
         i_x_b, i_x_a = int(i_x_b), int(i_x_a)
         i_y_b, i_y_a = int(i_y_b), int(i_y_a)
+
         image[i_x_b:i_x_a, i_y_b:i_y_a] = 1
         return image
 
@@ -173,7 +174,7 @@ class DeepPusherEnv(MainEnv):
         image = self.fill_obs(image, x_r, y_r, self.sim['robot']['radius'] / self.obs['precision'])
 
         # rotate over y and over x - np.flip(np.flip(a, 0), 1)
-        return np.flip(np.flip(image, 0), 1)        
+        return np.flip(np.flip(image, 0), 1)
 
     def check_pose_stuck(self, obs_pose):
         if round(obs_pose[0], self.obs['places']) == round(self.previous_robot_pose[0], self.obs['places']) \
@@ -308,8 +309,9 @@ class DeepPusherEnv(MainEnv):
         # Observe before pausing since our observations depend on Gazebo clock being published
         data = self.observe()
         state = self.discretise_observation(data)
-        import matplotlib.pyplot as plt
-        plt.imsave('a.png', state)
+        from PIL import Image
+        im = Image.fromarray((state * 255).astype(np.uint8))
+        im.save("ya.jpeg")
         
         if self.steps > 0:
             if self.check_pose_stuck(data[3]) and action != self.actions['none']:
