@@ -85,7 +85,8 @@ class DeepPusherEnv(MainEnv):
         # To be at the goal, the distance between the goal and the target cylinder must be < than the goal's radius
         r = self.sim['goal']['radius']
         dist = self.dist_xy(p_target_cyl, p_goal)
-        if dist < r:
+        dist = dist - self.sim['target_cyl']['radius']
+        if dist <= r + 0.05:
             return True
         return False
 
@@ -114,16 +115,75 @@ class DeepPusherEnv(MainEnv):
         pose_ = [pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z]
         return np.asarray(pose_)
         
-    def ori_align(self, pair):
+    def ori_align(self, state):
         # Is this correct?
         import math
         import transforms3d as td3
-        pos_g, pos_r = pair
+        _, pos_c, pos_g, pos_r, _ = state
 
-        ori_diff = math.atan2(pos_r[2] - pos_g[2], pos_r[0] - pos_g[0])
-        print("=-------------- Alignment = ", ori_diff)
-
+        #ori_diff = math.atan2(pos_r[2] - pos_g[2], pos_r[0] - pos_g[0])
+        #print("=-------------- Alignment = ", ori_diff)
+        # Check slopes between robot(x1, y1) - cyl(x2, y2) / cyl - goal(x3, y3) are close, if they are, robot is aligned with both which is what we want
+        # ((y1 - y2) * (x1 - x3) - (y1 - y3) * (x1 - x2)) <= 1e-9
+        ori_diff = ((pos_r[1] - pos_c[1]) * (pos_r[0] - pos_g[0]) - (pos_r[1] - pos_g[1]) * (pos_r[0] - pos_c[0]))
+        print("---------- ALIGNMENT = ", abs(ori_diff))
         return abs(ori_diff)
+
+    def transform_coordinates(self, length, height, x_coord, y_coord):
+        import math
+        bucket_cap_l = int(length / self.sim['length'])
+        bucket_cap_h = int(height / self.sim['width'])
+
+        x_bucket = int(x_coord)
+        y_bucket = int(y_coord)
+        
+        x_idx = math.modf(x_coord)[0] * bucket_cap_l
+        y_idx = math.modf(y_coord)[0] * bucket_cap_h
+
+        x_img_coord = x_bucket * bucket_cap_l + int(x_idx)
+        y_img_coord = y_bucket * bucket_cap_h + int(y_idx)
+
+        return x_img_coord, y_img_coord
+
+    def fill_obs(self, image, x, y, radius):
+        i_x_b = (x - radius) if (x -radius) in range(0, image.shape[0] + 1) else 0
+        i_x_a = (x + radius +1) if (x + radius + 1) in range(0, image.shape[0] + 1) else image.shape[0]
+        i_y_b = (y - radius) if (y -radius) in range(0, image.shape[0] + 1) else 0
+        i_y_a = (y + radius +1) if (y + radius + 1) in range(0, image.shape[0] + 1) else image.shape[0]
+        
+        i_x_b, i_x_a = int(i_x_b), int(i_x_a)
+        i_y_b, i_y_a = int(i_y_b), int(i_y_a)
+        image[i_x_b:i_x_a, i_y_b:i_y_a] = 1
+        return image
+
+    def generate_obs_img(self, pos_c, pos_g, pos_r):
+        # Get world img sizes
+        length = int(self.sim['length'] / self.obs['precision'])
+        height = int(self.sim['width'] / self.obs['precision'])
+        image = np.zeros((length + 1, height + 1), dtype=np.float16)
+
+        # Calculate coordinates for the poses on the image
+        x_c, y_c = self.transform_coordinates(length, height, pos_c[0], pos_c[1])
+        x_g, y_g = self.transform_coordinates(length, height, pos_g[0], pos_g[1])
+        x_r, y_r = self.transform_coordinates(length, height, pos_r[0], pos_r[1])
+        
+        # Fill in observations
+        image = self.fill_obs(image, x_c, y_c, self.sim['target_cyl']['radius'] / self.obs['precision'])
+        image = self.fill_obs(image, x_g, y_g, self.sim['goal']['radius'] / self.obs['precision'])
+        image = self.fill_obs(image, x_r, y_r, self.sim['robot']['radius'] / self.obs['precision'])
+
+        # rotate over y and over x - np.flip(np.flip(a, 0), 1)
+        return np.flip(np.flip(image, 0), 1)        
+
+    def check_pose_stuck(self, obs_pose):
+        if round(obs_pose[0], self.obs['places']) == round(self.previous_robot_pose[0], self.obs['places']) \
+            and round(obs_pose[1], self.obs['places']) == round(self.previous_robot_pose[1], self.obs['places']):
+            return True
+        return False
+
+    def discretise_observation(self, state):
+        _, pose_target_cyl, pose_goal, pose_robot, _ = state
+        return self.generate_obs_img(pose_target_cyl, pose_goal, pose_robot)
 
     def observe_lidar(self, data, new_ranges):
         d_ranges = []
@@ -139,13 +199,6 @@ class DeepPusherEnv(MainEnv):
                     d_ranges.append(int(data.ranges[i]))
 
         return d_ranges
-
-    def check_pose_stuck(self, obs_pose):
-        if round(obs_pose[0], 4) == round(self.previous_robot_pose[0], 4) \
-            and round(obs_pose[1], 4) == round(self.previous_robot_pose[1], 4) \
-            and round(obs_pose[2], 4) == round(self.previous_robot_pose[2], 4):
-            return True
-        return False
 
     def observe(self):
         ''' Observe pointcloud '''
@@ -211,13 +264,12 @@ class DeepPusherEnv(MainEnv):
         self.last_goal_dist = dist_goal       
 
         # Dist to cyl reward
-        reward_cyl_flag = (self.last_cyl_dist > self.sim['target_cyl']['radius'] + 0.01)
+        reward_cyl_flag = (self.last_cyl_dist > self.sim['target_cyl']['radius'] + 0.05)
         reward += (self.last_cyl_dist - dist_cyl) * self.rewards[self.obs_idx_r['at_target_cyl']] * reward_cyl_flag
         self.last_cyl_dist = dist_cyl
 
-        # Orientation reward
-        #ori = (state[2] if (dist_cyl < 0.2) else state[1], state[3])
-        #reward -= 1.2 * self.ori_align(ori)
+        # Alignment with cyl and goal reward
+        reward -= self.r_scale_factor * self.ori_align(state)
 
         # Penalise for time step
         reward -= self.penalties[self.obs_idx_p['step']]
@@ -246,12 +298,6 @@ class DeepPusherEnv(MainEnv):
 
         if action == self.actions['none']:
             self.navigator.do_nothing()
-        #elif action == self.actions['push_forward']:
-        #    self.navigator.push_forward()
-        #elif action == self.actions['push_left']:
-        #    self.navigator.push_left()
-        #elif action == self.actions['push_right']:
-        #    self.navigator.push_right()
         elif action == self.actions['move_forward']:
             self.navigator.move_forward(0.35)
         elif action == self.actions['move_left']:
@@ -260,14 +306,17 @@ class DeepPusherEnv(MainEnv):
             self.navigator.move_right(0.15)
 
         # Observe before pausing since our observations depend on Gazebo clock being published
-        state = self.observe()
-
+        data = self.observe()
+        state = self.discretise_observation(data)
+        import matplotlib.pyplot as plt
+        plt.imsave('a.png', state)
+        
         if self.steps > 0:
-            if self.check_pose_stuck(state[3]):
+            if self.check_pose_stuck(data[3]) and action != self.actions['none']:
                 self.robot_stuck += 1
             else:
                 self.robot_stuck = 0
-        self.previous_robot_pose = state[3]
+        self.previous_robot_pose = data[3]
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
@@ -275,25 +324,24 @@ class DeepPusherEnv(MainEnv):
         except (rospy.ServiceException) as e:
             print("[LOG] /gazebo/pause_physics service call failed")
 
-        #state, done = self.discretize_observation(data, 5)
-
         done = False
-        reward = self.reward(state)
+        reward = self.reward(data)
         #if self.observer.cyl.current_pos[0] != 0 and self.observer.cyl.current_pos[1] != 0 and self.observer.cyl.current_pos[2] != 0:
-        if self.at_goal(state):
+        if self.at_goal(data):
             reward += self.rewards[self.obs_idx_r['at_goal']]
             done = True
+            print("[ENV] Target cylinder is at goal!")
         if self.robot_stuck > 6:
             done = True
             self.robot_stuck = 0
-            print("ROBOT STUCK...")
+            reward -= self.penalties[self.obs_idx_p['robot_stuck']]
+            print("[ENV] Robot has not altered its position for 6 consecutive time steps.")
 
         self.steps += 1
         if self.steps == self.max_steps:
             done = True
-            print("We are so done...")
+            print("[ENV] Steps taken are over the maximum allowed threshold.")
         
-        #return state, reward, done, {}
         return state, reward, done, self.observer.cyl.get_layout_dict()
 
     def reset(self):

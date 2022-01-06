@@ -57,7 +57,8 @@ class DeepPusher():
             if self.qlearn.epsilon > 0.05:
                 self.qlearn.epsilon *= self.epsilon_discount
             
-            self.render(x)
+            # Not doing selective rendering for now
+            #self.render(x)
             state = ''.join(map(str, observation))
 
             steps = 0
