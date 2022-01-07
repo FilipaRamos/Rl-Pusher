@@ -216,7 +216,8 @@ class DeepPusherEnv(MainEnv):
             obs = None
             while obs is None or self.sim['robot']['id'] not in obs.name:
                 try:
-                    obs = rospy.wait_for_message('/gazebo/model_states', ModelStates, timeout=5)
+                    obs = rospy.wait_for_message('/gazebo/model_states', ModelStates, timeout=1)
+                    rospy.sleep(0.5)
                 except:
                     pass
             idx_target_cyl = obs.name.index(self.sim['target_cyl']['id'])

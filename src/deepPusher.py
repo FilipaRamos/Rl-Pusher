@@ -26,6 +26,24 @@ class DeepPusher():
         elif ((x - render_episodes) % render_interval == 0) and (x != 0) and (x > render_skip) and (render_episodes < x):
             self.env.render(close=True)
 
+    def setup_log(self, out_dir):
+        import os
+        assert os.exists(out_dir)
+
+        path = os.path.join(out_dir, '/qlearn.batch.txt')
+        f = open(path, "w")
+        return path
+
+    def save(self, episode, message, clear=False):
+        if episode == 1 or clear:
+            f = open(self.log, "w")
+            f.write(str(message))
+            f.write('\n')
+        else:
+            f = open(self.log, "a")
+            f.write(str(message))
+            f.write('\n')
+
     def setup(self, out_dir='../tmp/experiments'):
         env = gym.make('deepPusher-v0')
         self.outdir = out_dir
@@ -45,6 +63,8 @@ class DeepPusher():
         self.total_episodes = 15000
 
         self.highest_reward = 0
+        
+        self.log = self.setup_log(out_dir)
         print("[ LOG] deepPusher setup done!")
 
     def cycle(self):
@@ -62,6 +82,7 @@ class DeepPusher():
             state = ''.join(map(str, observation))
 
             steps = 0
+            cls = False
             while True:
                 # Pick action based on current state
                 action = self.qlearn.chooseAction(state)
@@ -72,12 +93,15 @@ class DeepPusher():
 
                 if self.highest_reward < cumulated_reward:
                     self.highest_reward = cumulated_reward
+                    cls = True
 
                 nextState = ''.join(map(str, observation))
                 self.qlearn.learn(state, nextState, action, reward)
 
                 self.env._flush(force=True)
                 steps += 1
+                # Save action history
+                self.save(x, action, clear=cls)
 
                 if not(done):
                     state = nextState
