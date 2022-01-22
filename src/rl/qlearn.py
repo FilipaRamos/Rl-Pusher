@@ -1,12 +1,34 @@
+import os
+import rospkg
 import random
 
 class QLearn:
-    def __init__(self, actions, epsilon, alpha, gamma):
+    def __init__(self, actions, epsilon, alpha, gamma, start_from_checkpoint=False):
         self.q = {}
         self.actions = actions
         self.epsilon = epsilon
         self.alpha = alpha
         self.gamma = gamma
+
+        rospack = rospkg.RosPack()
+        cur_dir = rospack.get_path('deep-rl-pusher')
+        self.qtable_path = os.path.join(cur_dir, 'tmp/qtable_qlearn.pkl')
+
+        if start_from_checkpoint:
+            self.loadTable(self.qtable_path)
+
+    def loadTable(self, file):
+        import os
+        import pickle
+        file_p = os.path.join('tmp', file)
+        file = open(file_p, "rb")
+        self.q = pickle.load(file)
+
+    def saveQTable(self):
+        import pickle
+        file = open(self.qtable_path, "wb")
+        pickle.dump(self.q, file)
+        file.close()
 
     def getQ(self, state, action):
         return self.q.get((state, action), 0.0)
@@ -32,6 +54,23 @@ class QLearn:
             maxQ = max(q)
 
         count = q.count(maxQ)
+        # When there are many state-action max values, select a random one
+        if count > 1:
+            best = [i for i in range(len(self.actions)) if q[i] == maxQ]
+            i = random.choice(best)
+        else:
+            i = q.index(maxQ)
+
+        action = self.actions[i]
+        if return_q:
+            return action, q
+        return action
+
+    def chooseActionInf(self, state, return_q=False):
+        q = [self.getQ(state, a) for a in self.actions]
+        maxQ = max(q)
+        count = q.count(maxQ)
+
         # When there are many state-action max values, select a random one
         if count > 1:
             best = [i for i in range(len(self.actions)) if q[i] == maxQ]

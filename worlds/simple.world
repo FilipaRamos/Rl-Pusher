@@ -32,19 +32,19 @@
     <!-- Include the marker for the goal position -->
     <include>
       <uri>model://marker</uri>
-      <pose>4 2.2 0 0 0 0</pose>
+      <pose>2.99 1.45 0 0 0 0</pose>
     </include>
 
     <!-- Include pushable cylinder object -->
     <include>
       <uri>model://cylinder-2</uri>
-      <pose>2.3 2 0 0 0 0</pose>
+      <pose>1.67 1.42 0 0 0 0</pose>
     </include>
 
     <!-- Include the wall that creates the world limit -->
     <include>
       <uri>model://wall</uri>
-      <pose>1.44 2.15 0 0 0 0</pose>
+      <pose>0.45 1.45 -0.75 0 0 0</pose>
     </include>
 
     <scene>

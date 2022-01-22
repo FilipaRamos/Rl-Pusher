@@ -3,15 +3,15 @@
   <arg name="model" default="waffle" doc="model type [burger, waffle, waffle_pi]"/>
   
   <!-- These default arguments indicate that the robot will be spawned on (0,0,0) with (0,0,0) heading -->
-  <arg name="x_pos" default="1.0"/>
-  <arg name="y_pos" default="2.2"/>
+  <arg name="x_pos" default="0.28"/>
+  <arg name="y_pos" default="1.41"/>
   <arg name="z_pos" default="0.0"/>
   <arg name="roll" default="0.0"/>
   <arg name="pitch" default="0.0"/>
   <arg name="yaw" default="0.0"/>  
   
   <!-- The default world to launch -->
-  <arg name="world" default="general"/>
+  <arg name="world" default="simple"/>
 
   <env name="GAZEBO_MODEL_PATH" value="$(find deep-rl-pusher)/models"/>
   <include file="$(find deep-rl-pusher)/launch/cfg-gazebo.launch">
@@ -30,6 +30,6 @@
     <arg name="model" value="$(arg model)"/>
   </include>
 
-  <!-- Don't need rviz for now 
+  <!-- Don't need rviz for now
   <node name="rviz" pkg="rviz" type="rviz" args="-d $(find deep-rl-pusher)/rviz/cfg-trajectory.rviz"/> -->
 </launch>

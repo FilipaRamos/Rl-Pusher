@@ -9,7 +9,7 @@ class Navigator():
         self.mov_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=5)
 
     '''
-        Actuator messages for action performance
+        Actuator messages for carrying actions
     '''
     def clean_msg(self):
         self.msg.linear.x = 0
@@ -20,23 +20,20 @@ class Navigator():
         self.msg.angular.y = 0
         self.msg.angular.z = 0
 
-    def do_nothing(self):
+    def stop(self):
         self.clean_msg()
         self.mov_pub.publish(self.msg)
 
-    def push_forward(self):
-        self.move_forward(0.2)
-
-    def push_left(self):
-        self.move_left(0.2)
-
-    def push_right(self):
-        self.move_right(0.2)
-
-    def move_forward(self, vel):
+    def move_forward(self, v):
         self.clean_msg()
-        self.msg.linear.x = vel
+        self.msg.linear.x = v
         self.msg.linear.z = 0.0
+        self.mov_pub.publish(self.msg)
+
+    def turn(self, w):
+        self.clean_msg()
+        self.msg.linear.x = w / 3
+        self.msg.angular.z = w
         self.mov_pub.publish(self.msg)
 
     def move_left(self, vel):

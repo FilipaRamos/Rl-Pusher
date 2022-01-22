@@ -11,8 +11,7 @@ from gym.utils import seeding
 from std_srvs.srv import Empty
 from nav_msgs.msg import Odometry
 from sensor_msgs.msg import LaserScan
-from gazebo_msgs.srv import SetModelState
-from gazebo_msgs.msg import ModelStates, ModelState
+from gazebo_msgs.msg import ModelStates, LinkStates
 
 from observer import Observer
 from navigator import Navigator
@@ -35,7 +34,7 @@ class DeepPusherEnv(MainEnv):
         self.obs = sim_cfg['obs']
 
         self.lidar = self.load_config(ros_path + "/config/lidar.config")['lidar']
-        self.action_cfg = self.load_config(ros_path + "/config/actions.config")['action_space']
+        self.action_cfg = self.load_config(ros_path + "/config/actions_mixed.config")['action_space']
         self.actions = self.action_cfg['actions']
         self.parameters = self.action_cfg['parameters']
 
@@ -50,8 +49,12 @@ class DeepPusherEnv(MainEnv):
         self.navigator = Navigator()
 
         # Actions are loaded from config
-        self.action_space = spaces.Discrete(len(self.actions))
-        
+        parameters_min = np.array([0, -1])
+        parameters_max = np.array([1, +1])
+        self.action_space = spaces.Tuple((
+                        spaces.Discrete(len(self.actions)),
+                        spaces.Box(parameters_min, parameters_max)
+                    ))
         # Parametrise the steps of the simulation so that we can penalise long solutions
         self.steps = 0
         self.max_steps = sim_cfg['sim']['max_steps']
@@ -81,61 +84,6 @@ class DeepPusherEnv(MainEnv):
             pose_goal = [self.sim['goal']['pos']['x'], self.sim['goal']['pos']['y'], self.sim['goal']['pos']['z']]
             return self.dist_xy(pose_cyl, pose_goal)
 
-    def spawn_random(self, cyl=True, goal=False):
-        if cyl:
-            cyl_state = ModelState()
-            cyl_state.model_name = self.sim['target_cyl']['id']
-
-            r = float(self.sim['target_cyl']['radius'])
-            w = float(self.sim['width'])
-            l = float(self.sim['length'])
-            new_x = np.random.uniform(r + 0.2, l / 2 - r + 0.1)
-            new_y = np.random.uniform(r + 0.1, w - r + 0.1)
-
-            cyl_state.pose.position.x = new_x
-            cyl_state.pose.position.y = new_y
-
-            # Must update config dict
-            self.sim['target_cyl']['pos']['x'] = new_x
-            self.sim['target_cyl']['pos']['y'] = new_y
-            print('[ LOG] ..... Update dict target cyl>', new_x, new_y)
-
-            # Use Gazebo service in order to change new cylinder pose
-            rospy.wait_for_service('/gazebo/set_model_state')
-            try:
-                set_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
-                resp = set_state(cyl_state)
-                print('[ LOG] ------------', resp)
-            except (rospy.ServiceException) as e:
-                print("Service call failed: %s" % e)
-        if goal:
-            goal_state = ModelState()
-            goal_state.model_name = self.sim['goal']['id']
-
-            r = float(self.sim['goal']['radius'])
-            w = float(self.sim['width'])
-            l = float(self.sim['length'])
-            offset = l / 2 + r + 0.1
-            new_x = np.random.uniform(offset, l - r + 0.1)
-            new_y = np.random.uniform(r + 0.1, w - r + 0.1)
-
-            goal_state.pose.position.x = new_x
-            goal_state.pose.position.y = new_y
-
-            # Must update config dict
-            self.sim['goal']['pos']['x'] = new_x
-            self.sim['goal']['pos']['y'] = new_y
-            print('[ LOG] ..... Update dict goal>', new_x, new_y)
-
-            # Use Gazebo service in order to change new cylinder pose
-            rospy.wait_for_service('/gazebo/set_model_state')
-            try:
-                set_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
-                resp = set_state(goal_state)
-                print('[ LOG] ------------', resp)
-            except (rospy.ServiceException) as e:
-                print("Service call failed: %s" % e)
-
     def at_goal(self, state):
         # Unpack state
         _, p_target_cyl, p_goal, _, _ = state
@@ -143,24 +91,18 @@ class DeepPusherEnv(MainEnv):
         r = self.sim['goal']['radius']
         dist = self.dist_xy(p_target_cyl, p_goal)
         dist = dist - self.sim['target_cyl']['radius']
-        if dist <= r + 0.02:
+        if dist <= r + 0.05:
             return True
         return False
 
     def dist_goal(self, state):
-        ''' Calculates distance from robot to goal '''
-        _, _, p_goal, p_robot, _ = state
-        return self.dist_xy(p_robot, p_goal)
-
-    def dist_cyl(self, state):
-        ''' Calculates distance from robot to target_cyl '''
-        _, p_target_cyl, _, p_robot, _ = state
-        return self.dist_xy(p_robot, p_target_cyl)
-
-    def dist_cyl_goal(self, state):
-        ''' Calculates distance from target cyl to goal '''
+        ''' Calculates distance from target cylinder to goal '''
         _, p_target_cyl, p_goal, _, _ = state
         return self.dist_xy(p_target_cyl, p_goal)
+
+    def dist_cyl(self, state):
+        _, p_target_cyl, _, p_robot, _ = state
+        return self.dist_xy(p_robot, p_target_cyl)
 
     def dist_xy(self, pose1, pose2):
         pose1 = np.asarray(pose1)
@@ -280,7 +222,7 @@ class DeepPusherEnv(MainEnv):
             while obs is None or self.sim['robot']['id'] not in obs.name:
                 try:
                     obs = rospy.wait_for_message('/gazebo/model_states', ModelStates, timeout=1)
-                    rospy.sleep(0.8)
+                    rospy.sleep(0.5)
                 except:
                     pass
             idx_target_cyl = obs.name.index(self.sim['target_cyl']['id'])
@@ -316,28 +258,22 @@ class DeepPusherEnv(MainEnv):
     def reward(self, state):
         reward = 0.0
 
-        # Robot distance to goal
-        dist_goal = self.dist_cyl_goal(state)
+        # Target cylinder distance to goal
+        dist_goal = self.dist_goal(state)
         # Distance from the robot to the target cylinder (believed by the robot)
         if self.obs['target_cyl']:
             dist_cyl = self.dist_cyl(state)
         else: 
             dist_cyl = self.observer.cyl.dist_to()
-        # Target cyl distance to goal
-        #dist_cyl_goal = self.dist_cyl_goal(state)
 
         # Dist to goal reward
-        #reward += (self.last_cyl_goal_dist - dist_cyl_goal) * self.rewards[self.obs_idx_r['robot_goal']]
-        #self.last_cyl_goal_dist = dist_cyl_goal        
+        reward += (self.last_goal_dist - dist_goal) * self.rewards[self.obs_idx_r['at_goal']]
+        self.last_goal_dist = dist_goal   
 
         # Dist to cyl reward
         reward_cyl_flag = (self.last_cyl_dist > self.sim['target_cyl']['radius'] + 0.05)
-        reward += (self.last_cyl_dist - dist_cyl) * self.rewards[self.obs_idx_r['robot_cyl']] * reward_cyl_flag
+        reward += (self.last_cyl_dist - dist_cyl) * self.rewards[self.obs_idx_r['at_target_cyl']] * reward_cyl_flag
         self.last_cyl_dist = dist_cyl
-
-        # Dist cyl to goal reward
-        reward += (self.last_goal_dist - dist_goal) * self.rewards[self.obs_idx_r['cyl_goal']]
-        self.last_goal_dist = dist_goal
 
         # Alignment with cyl and goal reward
         reward -= self.r_scale_factor * self.ori_align(state)
@@ -367,13 +303,16 @@ class DeepPusherEnv(MainEnv):
             self.unpause()
         except (rospy.ServiceException) as e:
             print("[LOG] /gazebo/unpause_physics service call failed")
-        
-        if action == self.actions['move_forward']:
-            self.navigator.move_forward(0.35)
-        elif action == self.actions['move_left']:
-            self.navigator.move_left(0.15)
-        elif action == self.actions['move_right']:
-            self.navigator.move_right(0.15)
+
+        vel, rot = 0, 0
+        if action == self.actions['stop']:
+            self.navigator.stop()
+        elif action == self.actions['move_forward']:
+            vel = self.parameters['max_vel'] * max(min(action.parameter, 1), 0)
+            self.navigator.move_forward(vel)
+        elif action == self.actions['turn']:
+            rot = self.parameters['max_turn'] * max(min(action.parameter, 1), -1)
+            self.navigator.turn(rot)
 
         # Observe before pausing since our observations depend on Gazebo clock being published
         data = self.observe()
@@ -399,12 +338,14 @@ class DeepPusherEnv(MainEnv):
         reward = self.reward(data)
         #if self.observer.cyl.current_pos[0] != 0 and self.observer.cyl.current_pos[1] != 0 and self.observer.cyl.current_pos[2] != 0:
         if self.at_goal(data):
+            #reward += self.r_scale_factor * self.rewards[self.obs_idx_r['at_goal']]
             reward += self.rewards[self.obs_idx_r['at_goal']]
             done = True
             print("[ENV] Target cylinder is at goal!")
         if self.robot_stuck > 6:
             done = True
             self.robot_stuck = 0
+            #reward -= self.r_scale_factor * self.penalties[self.obs_idx_p['robot_stuck']]
             reward -= self.penalties[self.obs_idx_p['robot_stuck']]
             print("[ENV] Robot has not altered its position for 6 consecutive time steps.")
 
@@ -413,6 +354,8 @@ class DeepPusherEnv(MainEnv):
             reward -= self.penalties[self.obs_idx_p['max_steps']]
             done = True
             print("[ENV] Steps taken are over the maximum allowed threshold.")
+        
+        print('REWARD>', reward)
 
         return state, reward, done, self.observer.cyl.get_layout_dict()
 

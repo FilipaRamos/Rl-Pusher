@@ -19,3 +19,6 @@ def quat2zalign(quat):
     # z_{body} dot z_{ground} = a**2 - b**2 - c**2 + d**2
     a, b, c, d = quat
     return a**2 - b**2 - c**2 + d**2
+
+def get_epsilon(cfg, step):
+    return cfg['epsilon_final'] + cfg['epsilon_start'] - cfg['epsilon_final'] * np.exp(-1. * step / cfg['epsilon_decay'])
