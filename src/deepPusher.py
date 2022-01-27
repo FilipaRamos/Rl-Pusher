@@ -18,11 +18,12 @@ class DeepPusher():
         @param objectDetector - class that provides the cylinder detectionstep
         @param state - variable that describes the behaviour that the robot must take
     '''
-    def __init__(self, algo, inference):
+    def __init__(self, algo, inference, agent='greedy'):
         self.state = 0
         self.frequency = 10
         self.algo = algo
         self.inference = inference
+        self.agent = agent
 
     def render(self, x, render_skip = 0, render_interval = 50, render_episodes = 10):
         if (x % render_interval == 0) and (x != 0) and (x > render_skip):
@@ -70,12 +71,12 @@ class DeepPusher():
         if self.algo == 'qlearn':
             print("[ LOG] deepPusher has chosen algorithm qlearn")
             self.qlearn = qlearn.QLearn(actions=range(self.env.action_space.n),
-                    alpha=0.2, gamma=0.8, epsilon=0.9)
+                    alpha=0.2, gamma=0.7, epsilon=0.8)
             self.setup_qlearn()
+            #self.qlearn.loadTable('qtable_qlearn.pkl')
             ''' Inference mode '''
             if self.inference is not None:
                 self.qlearn.loadTable(self.inference)
-                self.qlearn_inference()
 
         elif self.algo == 'deep-qlearn':
             print("[ LOG] deepPusher has chosen algorithm deep-qlearn")
@@ -83,7 +84,7 @@ class DeepPusher():
             self.setup_deep_learn()
 
         self.start_time = time.time()
-        self.total_episodes = 50
+        self.total_episodes = 200
 
         self.highest_reward = 0
         self.prev_cumulated_reward = 0
@@ -124,9 +125,11 @@ class DeepPusher():
             action_log = []
 
             observation = self.env.reset()
-            if x % 20 == 0:
+            # DEPRECATING FOR NOW
+            #if x % 20 == 0:
+                #print('[ LOG] Initializing another run with random spawns.')
                 # Spawn random cyl and goal
-                self.env.spawn_random(cyl=True, goal=True)
+                #self.env.spawn_random(cyl=True, goal=True)
 
             if self.qlearn.epsilon > 0.05:
                 self.qlearn.epsilon *= self.epsilon_discount
@@ -136,7 +139,7 @@ class DeepPusher():
             steps = 0
             while True:
                 # Pick action based on current state
-                action = self.qlearn.chooseAction(state)
+                action = self.qlearn.chooseAction(state, self.agent)
 
                 # Execute action and receive the reward
                 observation, reward, done, info = self.env.step(action)
@@ -158,7 +161,7 @@ class DeepPusher():
                     self.last_time_steps = np.append(self.last_time_steps, [int(steps + 1)])
                     break
             
-            self.qlearn.saveQTable()
+                self.qlearn.saveQTable()
             m, s = divmod(int(time.time() - self.start_time), 60)
             h, m = divmod(m, 60)
             
@@ -177,7 +180,6 @@ class DeepPusher():
 
         print("Overall score: {:0.2f}".format(self.last_time_steps.mean()))
         print("Best 100 score: {:0.2f}".format(reduce(lambda x, y: x + y, l[-100:]) / len(l[-100:])))
-        print('[ LOG] Initializing another run with random spawns.')
 
         self.env.close()
 
@@ -216,8 +218,6 @@ class DeepPusher():
                     graph.append(np.mean(recent_scores))
 
                 if done:
-                    if reward > 0:
-                        print('Yay !')
                     break
 
             if self.step > self.total_episodes:
@@ -241,13 +241,15 @@ class DeepPusher():
         while True:
             # Pick action based on current state
             action, q = self.qlearn.chooseActionInf(state, return_q=True)
+            print('Chosen>', action)
+            print(state)
 
             # Execute action and receive the reward
             observation, reward, done, info = self.env.step(action)
             cumulated_reward += reward
 
             nextState = ''.join(map(str, observation))
-            self.env._flush(force=True)
+            #self.env._flush(force=True)
 
             steps += 1
             action_log.append(action)
@@ -273,10 +275,14 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         if len(sys.argv) > 2:
             dp = DeepPusher(sys.argv[1], sys.argv[2])
+            dp.setup()
+            dp.qlearn_inference()
         else:
             dp = DeepPusher(sys.argv[1], None)
+            dp.setup()
+            dp.cycle()
     else:
         dp = DeepPusher('qlearn', None)
-    dp.setup()
-    dp.cycle()
+        dp.setup()
+        dp.cycle()
     print("[ LOG] Reached the end... Closing!")

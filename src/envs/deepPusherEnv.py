@@ -35,7 +35,8 @@ class DeepPusherEnv(MainEnv):
         self.obs = sim_cfg['obs']
 
         self.lidar = self.load_config(ros_path + "/config/lidar.config")['lidar']
-        self.action_cfg = self.load_config(ros_path + "/config/actions.config")['action_space']
+        #self.action_cfg = self.load_config(ros_path + "/config/actions.config")['action_space']
+        self.action_cfg = self.load_config(ros_path + "/config/actions_mixed.config")['action_space']
         self.actions = self.action_cfg['actions']
         self.parameters = self.action_cfg['parameters']
 
@@ -60,6 +61,9 @@ class DeepPusherEnv(MainEnv):
         # Calculate initial distances
         self.last_cyl_dist = self.dist_init(cyl=True)
         self.last_goal_dist = self.dist_init(cyl=False)
+
+        # Reward clip parameter for sanity
+        self.reward_clip = rewards_cfg['reward_clip']
 
         # Terminate early if the robot is stuck
         self.robot_stuck = 0
@@ -184,8 +188,6 @@ class DeepPusherEnv(MainEnv):
         import transforms3d as td3
         _, pos_c, pos_g, pos_r, _ = state
 
-        #ori_diff = math.atan2(pos_r[2] - pos_g[2], pos_r[0] - pos_g[0])
-        #print("=-------------- Alignment = ", ori_diff)
         # Check slopes between robot(x1, y1) - cyl(x2, y2) / cyl - goal(x3, y3) are close, if they are, robot is aligned with both which is what we want
         # ((y1 - y2) * (x1 - x3) - (y1 - y3) * (x1 - x2)) <= 1e-9
         ori_diff = ((pos_r[1] - pos_c[1]) * (pos_r[0] - pos_g[0]) - (pos_r[1] - pos_g[1]) * (pos_r[0] - pos_c[0]))
@@ -217,14 +219,14 @@ class DeepPusherEnv(MainEnv):
         i_x_b, i_x_a = int(i_x_b), int(i_x_a)
         i_y_b, i_y_a = int(i_y_b), int(i_y_a)
 
-        image[i_x_b:i_x_a, i_y_b:i_y_a] = 1
+        image[i_x_b:i_x_a, i_y_b:i_y_a] = 1.0
         return image
 
     def generate_obs_img(self, pos_c, pos_g, pos_r):
         # Get world img sizes
-        length = int(self.sim['length'] / self.obs['precision'])
-        height = int(self.sim['width'] / self.obs['precision'])
-        image = np.zeros((length + 1, height + 1), dtype=np.float16)
+        length = round(self.sim['length'] / self.obs['precision'])
+        height = round(self.sim['width'] / self.obs['precision'])
+        image = np.zeros((length, height), dtype=np.float16)
 
         # Calculate coordinates for the poses on the image
         x_c, y_c = self.transform_coordinates(length, height, pos_c[0], pos_c[1])
@@ -247,7 +249,12 @@ class DeepPusherEnv(MainEnv):
 
     def discretise_observation(self, state):
         _, pose_target_cyl, pose_goal, pose_robot, _ = state
-        return self.generate_obs_img(pose_target_cyl, pose_goal, pose_robot)
+        state_img = self.generate_obs_img(pose_target_cyl, pose_goal, pose_robot)
+        #(x_c, y_c, x_g, y_g, x_r, y_r) = coords
+        #coords_str = str(x_c) + '|' + str(y_c) + '|' + str(x_g) + '|' + str(y_g) + '|' + str(x_r) + '|' + str(y_r)
+        #return state_img, coords_str
+        state_str = np.array2string(state_img, formatter={'float_kind':lambda x: "%.2f" % x})
+        return state_img, state_str
 
     def observe_lidar(self, data, new_ranges):
         d_ranges = []
@@ -289,6 +296,15 @@ class DeepPusherEnv(MainEnv):
             idx_goal = obs.name.index(self.sim['goal']['id'])
             pose_goal = self.pose_to_array(obs.pose[idx_goal])
 
+            # Update config dicts
+            self.sim['target_cyl']['pos']['x'] = pose_target_cyl[0]
+            self.sim['target_cyl']['pos']['y'] = pose_target_cyl[1]
+            self.sim['target_cyl']['pos']['z'] = pose_target_cyl[2]
+
+            self.sim['goal']['pos']['x'] = pose_goal[0]
+            self.sim['goal']['pos']['y'] = pose_goal[1]
+            self.sim['goal']['pos']['z'] = pose_goal[2]
+
             if self.obs['robot']:
                 idx_robot = obs.name.index(self.sim['robot']['id'])
                 pose_robot = self.pose_to_array(obs.pose[idx_robot])
@@ -316,22 +332,17 @@ class DeepPusherEnv(MainEnv):
     def reward(self, state):
         reward = 0.0
 
-        # Robot distance to goal
+        # Target cyl distance to goal
         dist_goal = self.dist_cyl_goal(state)
-        # Distance from the robot to the target cylinder (believed by the robot)
+        # Distance from the robot to the target cylinder 
+        # Either complete or believed by the robot
         if self.obs['target_cyl']:
             dist_cyl = self.dist_cyl(state)
         else: 
             dist_cyl = self.observer.cyl.dist_to()
-        # Target cyl distance to goal
-        #dist_cyl_goal = self.dist_cyl_goal(state)
 
-        # Dist to goal reward
-        #reward += (self.last_cyl_goal_dist - dist_cyl_goal) * self.rewards[self.obs_idx_r['robot_goal']]
-        #self.last_cyl_goal_dist = dist_cyl_goal        
-
-        # Dist to cyl reward
-        reward_cyl_flag = (self.last_cyl_dist > self.sim['target_cyl']['radius'] + 0.05)
+        # Dist robot to cyl reward
+        reward_cyl_flag = (self.last_cyl_dist > dist_cyl)
         reward += (self.last_cyl_dist - dist_cyl) * self.rewards[self.obs_idx_r['robot_cyl']] * reward_cyl_flag
         self.last_cyl_dist = dist_cyl
 
@@ -340,20 +351,16 @@ class DeepPusherEnv(MainEnv):
         self.last_goal_dist = dist_goal
 
         # Alignment with cyl and goal reward
-        reward -= self.r_scale_factor * self.ori_align(state)
+        #reward -= self.ori_align(state)
 
         # Penalise for time step
-        reward -= self.r_scale_factor * self.penalties[self.obs_idx_p['step']]
-        
-        # DEPRECATING for now
-        # Rewards are on a too small scale
-        # reward = reward*self.r_scale_factor
+        reward -= self.penalties[self.obs_idx_p['step']]
         
         # Clip
-        #in_range = reward < self.reward_clip and reward > -self.reward_clip
-        #if not(in_range):
-        #    reward = np.clip(reward, -self.reward_clip, self.reward_clip)
-        #    print('Warning: reward was outside of range!')
+        in_range = reward < self.reward_clip and reward > -self.reward_clip
+        if not(in_range):
+            reward = np.clip(reward, -self.reward_clip, self.reward_clip)
+            print('[ EXCEPTION] Warning: reward was outside of range!')
 
         return reward
 
@@ -368,18 +375,31 @@ class DeepPusherEnv(MainEnv):
         except (rospy.ServiceException) as e:
             print("[LOG] /gazebo/unpause_physics service call failed")
         
-        if action == self.actions['move_forward']:
-            self.navigator.move_forward(0.35)
-        elif action == self.actions['move_left']:
-            self.navigator.move_left(0.15)
-        elif action == self.actions['move_right']:
-            self.navigator.move_right(0.15)
+        if len(self.actions) <= 3:
+            if action == self.actions['move_forward']:
+                self.navigator.move_forward(0.35)
+            elif action == self.actions['move_left']:
+                self.navigator.move_left(0.15)
+            elif action == self.actions['move_right']:
+                self.navigator.move_right(0.15)
+        else:
+            if action == self.actions['move_forward']:
+                self.navigator.move_forward(0.35)
+            elif action == self.actions['move_left_1']:
+                self.navigator.move_left(0.10)
+            elif action == self.actions['move_left_2']:
+                self.navigator.move_left(0.20)
+            elif action == self.actions['move_right_1']:
+                self.navigator.move_right(0.10)
+            elif action == self.actions['move_right_2']:
+                self.navigator.move_right(0.20)
 
         # Observe before pausing since our observations depend on Gazebo clock being published
         data = self.observe()
-        state = self.discretise_observation(data)
+        #state_img, state = self.discretise_observation(data)
+        state_img, state = self.discretise_observation(data)
         from PIL import Image
-        im = Image.fromarray((state * 255).astype(np.uint8))
+        im = Image.fromarray((state_img * 255).astype(np.uint8))
         im.save("resources/state.png")
         
         if self.steps > 0:
@@ -397,7 +417,6 @@ class DeepPusherEnv(MainEnv):
 
         done = False
         reward = self.reward(data)
-        #if self.observer.cyl.current_pos[0] != 0 and self.observer.cyl.current_pos[1] != 0 and self.observer.cyl.current_pos[2] != 0:
         if self.at_goal(data):
             reward += self.rewards[self.obs_idx_r['at_goal']]
             done = True
@@ -405,7 +424,7 @@ class DeepPusherEnv(MainEnv):
         if self.robot_stuck > 6:
             done = True
             self.robot_stuck = 0
-            reward -= self.penalties[self.obs_idx_p['robot_stuck']]
+            reward -= self.penalties[self.obs_idx_p['robot_stuck']] * self.robot_stuck
             print("[ENV] Robot has not altered its position for 6 consecutive time steps.")
 
         self.steps += 1
@@ -435,7 +454,8 @@ class DeepPusherEnv(MainEnv):
         self.observer.observe(force_ob_cyl=True)
 
         # Observe before pausing since our observations depend on Gazebo clock being published
-        state = self.observe()
+        data = self.observe()
+        state_img, state = self.discretise_observation(data)
 
         rospy.wait_for_service('/gazebo/pause_physics')
         try:
@@ -443,5 +463,4 @@ class DeepPusherEnv(MainEnv):
         except(rospy.ServiceException) as e:
             print("[LOG] /gazebo/pause_physics service call failed")
 
-        #state = self.discretize_observation(data, 5)
         return state

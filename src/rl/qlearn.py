@@ -18,6 +18,7 @@ class QLearn:
             self.loadTable(self.qtable_path)
 
     def loadTable(self, file):
+        print('Loading QTable.....')
         import os
         import pickle
         file_p = os.path.join('tmp', file)
@@ -37,13 +38,33 @@ class QLearn:
         # Q(s, a) += alpha * (reward(s, a) + max(Q(s') - Q(s, a)))
         old_value = self.q.get((state, action), None)
         if old_value is None:
+            print('New State, Registering.....')
             self.q[(state, action)] = reward
         else:
             self.q[(state, action)] = old_value + self.alpha * (value - old_value)
 
-    def chooseAction(self, state, return_q=False):
+    def chooseAction(self, state, agent, return_q=False):
+        if agent == 'random':
+            return self.chooseActionRandom(state, return_q)
+        else:
+            return self.chooseActionGreedy(state, return_q)
+
+    def chooseActionRandom(self, state, return_q=False):
+        # Always choose a random action
+        i = random.choice([i for i in range(len(self.actions))])
+        action = self.actions[i]
+        if return_q:
+            q = self.getQ(state, action)
+            return action, q
+        return action
+    
+    def chooseActionGreedy(self, state, return_q=False):
         q = [self.getQ(state, a) for a in self.actions]
-        maxQ = max(q)
+        if self.q:
+            maxQ = max(q)
+        else:
+            print('QTable is empty! Choosing random action')
+            maxQ = random.choice(q)
 
         if random.random() < self.epsilon:
             minQ = min(q)
@@ -70,7 +91,6 @@ class QLearn:
         q = [self.getQ(state, a) for a in self.actions]
         maxQ = max(q)
         count = q.count(maxQ)
-
         # When there are many state-action max values, select a random one
         if count > 1:
             best = [i for i in range(len(self.actions)) if q[i] == maxQ]
