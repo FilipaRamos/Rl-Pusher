@@ -1,10 +1,10 @@
 # Rl-Pusher
-![cover](https://github.com/FilipaRamos/Rl-Pusher/blob/9d6bb6edd8c7f663882bb2d4f8cd4c6ac6f51589/resources/cover.png)
-![segmentation](https://github.com/FilipaRamos/Rl-Pusher/blob/feda6b3f1814571c642fef51c4fa08591c6d843e/resources/clusters.png)
 
 This repository holds the code for the Rl Object Pusher. This code enables a robot to learn how to push cylinder-based objects to a pre-defined target location using q-learning.
 
-The base code is in src/deepPusher.py. The standard algorithm is q-learning, however, I had also finished code for deep q-learning. I did not have time to test it though!
+The base code is in src/deepPusher.py. The standard algorithm is q-learning, however, I had also some code for deep q-learning. I did not have time to test it though!
+
+![cover](https://github.com/FilipaRamos/Rl-Pusher/blob/9d6bb6edd8c7f663882bb2d4f8cd4c6ac6f51589/resources/cover.png =250x250)
 
 ### Packages
 
@@ -165,3 +165,5 @@ Take into consideration that Gazebo's client is automatically launched upon exec
 ### Author
 
 Filipa M. M. Ramos Ferreira
+
+![segmentation](https://github.com/FilipaRamos/Rl-Pusher/blob/feda6b3f1814571c642fef51c4fa08591c6d843e/resources/clusters.png =100x100)
