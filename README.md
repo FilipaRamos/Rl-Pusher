@@ -4,7 +4,7 @@ This repository holds the code for the Rl Object Pusher. This code enables a rob
 
 The base code is in src/deepPusher.py. The standard algorithm is q-learning, however, I had also some code for deep q-learning. I did not have time to test it though!
 
-<img src="https://github.com/FilipaRamos/Rl-Pusher/blob/9d6bb6edd8c7f663882bb2d4f8cd4c6ac6f51589/resources/cover.png" width="800" height="300">
+<img src="https://github.com/FilipaRamos/Rl-Pusher/blob/9d6bb6edd8c7f663882bb2d4f8cd4c6ac6f51589/resources/cover.png" width="800" height="280">
 
 ### Packages
 
