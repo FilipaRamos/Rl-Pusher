@@ -4,7 +4,7 @@ This repository holds the code for the Rl Object Pusher. This code enables a rob
 
 The base code is in src/deepPusher.py. The standard algorithm is q-learning, however, I had also some code for deep q-learning. I did not have time to test it though!
 
-![cover](https://github.com/FilipaRamos/Rl-Pusher/blob/9d6bb6edd8c7f663882bb2d4f8cd4c6ac6f51589/resources/cover.png =250x250)
+<img src="https://github.com/FilipaRamos/Rl-Pusher/blob/9d6bb6edd8c7f663882bb2d4f8cd4c6ac6f51589/resources/cover.png" width="100" height="400">
 
 ### Packages
 
@@ -166,4 +166,4 @@ Take into consideration that Gazebo's client is automatically launched upon exec
 
 Filipa M. M. Ramos Ferreira
 
-![segmentation](https://github.com/FilipaRamos/Rl-Pusher/blob/feda6b3f1814571c642fef51c4fa08591c6d843e/resources/clusters.png =100x100)
+<img src="https://github.com/FilipaRamos/Rl-Pusher/blob/feda6b3f1814571c642fef51c4fa08591c6d843e/resources/clusters.png" width="80" height="80">
