@@ -1,5 +1,5 @@
 # Deep-Rl-Pusher
-This repository holds the code for the Deep Rl Object Pusher. This code enables a robot to learn how to push cylinder-based objects to a pre-defined target location using q-learning.
+This repository holds the code for the Rl Object Pusher. This code enables a robot to learn how to push cylinder-based objects to a pre-defined target location using q-learning.
 
 The base code is in src/deepPusher.py. The standard algorithm is q-learning, however, I had also finished code for deep q-learning. I did not have time to test it though!
 
